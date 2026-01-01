@@ -1,0 +1,9 @@
+# Minimal test to check schema syntax
+
+# Test 1: Can we reference 'string' as a type?
+result = llm.call(
+    prompt: "Say hello",
+    schema: {greeting: string}
+)
+
+emit(result.greeting)

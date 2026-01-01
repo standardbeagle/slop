@@ -1,0 +1,15 @@
+# Simple Chat Script
+# Basic conversation with the LLM
+
+message = input.message or "Hello!"
+system_prompt = input.system or "You are a helpful, friendly assistant."
+
+# SLOP doesn't support multiline strings, so we use concatenation
+prompt_text = system_prompt + "\n\nUser: " + message + "\n\nRespond naturally and helpfully."
+
+response = llm.call(
+    prompt: prompt_text,
+    schema: {response: string, mood: string}
+)
+
+emit(response.response)

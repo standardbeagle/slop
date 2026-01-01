@@ -1,0 +1,7 @@
+items = [1, 2, 3, 4, 5]
+total = 0
+
+for item in items with limit(10):
+    total = total + item
+
+emit(total: total, count: len(items))

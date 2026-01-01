@@ -1,0 +1,41 @@
+# Research Agent Script
+# This script uses an LLM to research a topic and synthesize findings
+
+===SOURCE: research_agent===
+id: "chat/research@v1"
+uses: {}
+---
+def research_topic(topic, max_searches):
+    # Step 1: Generate search queries
+    query_prompt = "Generate " + str(max_searches) + " search queries to research: " + topic
+    expansion = llm.call(
+        prompt: query_prompt,
+        schema: {queries: list, reasoning: string}
+    )
+
+    # Step 2: Search for each query (if web service available)
+    results = []
+    for query in expansion.queries with limit(max_searches):
+        # This would use an MCP web search tool if connected
+        results.append({query: query, status: "would search"})
+
+    # Step 3: Synthesize findings
+    synthesis_prompt = "Based on the research plan for: " + topic + "\nQueries: " + str(expansion.queries) + "\n\nProvide a comprehensive summary of what we would learn."
+    synthesis = llm.call(
+        prompt: synthesis_prompt,
+        schema: {summary: string, key_points: list, confidence: number}
+    )
+
+    return synthesis
+
+===USE: chat/research@v1===
+
+===MAIN===
+topic = input.topic or "artificial intelligence trends 2025"
+max_searches = input.max_searches or 5
+
+result = research_agent.research_topic(topic, max_searches)
+
+emit(summary: result.summary)
+emit(key_points: result.key_points)
+emit(confidence: result.confidence)

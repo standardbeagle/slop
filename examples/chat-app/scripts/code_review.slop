@@ -1,0 +1,48 @@
+# Code Review Agent Script
+# This script reviews code and provides feedback using LLM
+
+===SOURCE: code_reviewer===
+id: "chat/code_review@v1"
+uses: {}
+---
+def review_code(code, language):
+    # Step 1: Analyze the code
+    analysis_prompt = "Analyze the following " + language + " code for:\n1. Bugs and potential issues\n2. Code style and best practices\n3. Performance concerns\n4. Security vulnerabilities\n\nCode:\n" + code
+    analysis = llm.call(
+        prompt: analysis_prompt,
+        schema: {bugs: list, style_issues: list, performance_concerns: list, security_issues: list, overall_quality: string}
+    )
+
+    return analysis
+
+def suggest_improvements(code, language, analysis):
+    # Step 2: Generate improved code
+    improve_prompt = "Given this " + language + " code and the analysis, provide an improved version.\n\nOriginal code:\n" + code + "\n\nIssues found:\n- Bugs: " + str(analysis.bugs) + "\n- Style: " + str(analysis.style_issues) + "\n- Performance: " + str(analysis.performance_concerns) + "\n\nProvide the improved code with explanations."
+    improved = llm.call(
+        prompt: improve_prompt,
+        schema: {improved_code: string, changes_made: list, explanation: string}
+    )
+
+    return improved
+
+===USE: chat/code_review@v1===
+
+===MAIN===
+# Example: Review some Python code
+sample_code = input.code or "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"
+
+language = input.language or "python"
+
+# Perform review
+analysis = code_reviewer.review_code(sample_code, language)
+
+emit(overall_quality: analysis.overall_quality)
+emit(bugs: analysis.bugs)
+emit(style_issues: analysis.style_issues)
+emit(security_issues: analysis.security_issues)
+
+# Get improvement suggestions if there are issues
+if len(analysis.bugs) > 0 or len(analysis.style_issues) > 0:
+    improvements = code_reviewer.suggest_improvements(sample_code, language, analysis)
+    emit(improved_code: improvements.improved_code)
+    emit(changes: improvements.changes_made)

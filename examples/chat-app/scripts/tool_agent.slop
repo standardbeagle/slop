@@ -1,0 +1,47 @@
+# Tool-Using Agent Script
+# This script demonstrates using MCP tools with LLM orchestration
+
+===SOURCE: tool_agent===
+id: "chat/tool_agent@v1"
+uses: {}
+---
+def plan_actions(task, available_tools):
+    # Ask LLM to plan which tools to use
+    plan_prompt = "You have access to the following tools:\n" + available_tools + "\n\nTask: " + task + "\n\nPlan the steps needed to complete this task. For each step, specify:\n1. What tool to use (or 'none' if no tool needed)\n2. What arguments to pass\n3. What you expect to learn"
+    plan = llm.call(
+        prompt: plan_prompt,
+        schema: {steps: list, reasoning: string}
+    )
+    return plan
+
+def execute_with_tools(task, tools_service):
+    # Get tool descriptions
+    tool_descriptions = "No tools available"
+
+    # Plan actions
+    plan = plan_actions(task, tool_descriptions)
+
+    # Execute each step
+    results = []
+    for step in plan.steps with limit(10):
+        # For now, just track the steps (actual MCP tool calls would go here)
+        results.append({step: str(step), result: "Tool call would happen here"})
+
+    # Synthesize final answer
+    synthesis_prompt = "Task: " + task + "\nSteps taken: " + str(results) + "\n\nProvide a final answer based on the steps completed."
+    synthesis = llm.call(
+        prompt: synthesis_prompt,
+        schema: {answer: string, confidence: number}
+    )
+
+    return synthesis
+
+===USE: chat/tool_agent@v1===
+
+===MAIN===
+task = input.task or "What is the weather like today?"
+
+result = tool_agent.execute_with_tools(task, none)
+
+emit(answer: result.answer)
+emit(confidence: result.confidence)

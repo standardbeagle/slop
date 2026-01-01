@@ -1,0 +1,97 @@
+# Code Helper - Assists with programming questions and code snippets
+
+user_msg = user_message
+response = ""
+
+# Detect programming language mentioned
+languages = ["python", "javascript", "go", "rust", "java", "c++", "typescript"]
+detected_lang = "general"
+
+for lang in languages:
+    if lang in lower(user_msg):
+        detected_lang = lang
+        break
+
+# Check for common programming queries
+if "function" in lower(user_msg) or "how to" in lower(user_msg):
+    if detected_lang == "python":
+        emit "Here's a basic Python function example:\n\n"
+        emit "```python\n"
+        emit "def greet(name):\n"
+        emit "    return f'Hello, {name}!'\n\n"
+        emit "# Usage\n"
+        emit "print(greet('World'))\n"
+        emit "```\n\n"
+        emit "Would you like help with something more specific?"
+    elif detected_lang == "javascript":
+        emit "Here's a JavaScript function example:\n\n"
+        emit "```javascript\n"
+        emit "function greet(name) {\n"
+        emit "  return `Hello, ${name}!`;\n"
+        emit "}\n\n"
+        emit "// Usage\n"
+        emit "console.log(greet('World'));\n"
+        emit "```\n\n"
+        emit "Need help with something more specific?"
+    elif detected_lang == "go":
+        emit "Here's a Go function example:\n\n"
+        emit "```go\n"
+        emit "func greet(name string) string {\n"
+        emit "    return fmt.Sprintf(\"Hello, %s!\", name)\n"
+        emit "}\n\n"
+        emit "// Usage\n"
+        emit "fmt.Println(greet(\"World\"))\n"
+        emit "```\n\n"
+        emit "What else would you like to know?"
+    else:
+        emit "I can help with various programming languages! "
+        emit "Mention a language (Python, JavaScript, Go, etc.) and what you'd like to do."
+
+elif "loop" in lower(user_msg):
+    emit "Loops let you repeat code. Here are examples:\n\n"
+    emit "**Python:**\n"
+    emit "```python\n"
+    emit "for i in range(5):\n"
+    emit "    print(i)\n"
+    emit "```\n\n"
+    emit "**JavaScript:**\n"
+    emit "```javascript\n"
+    emit "for (let i = 0; i < 5; i++) {\n"
+    emit "  console.log(i);\n"
+    emit "}\n"
+    emit "```\n\n"
+    emit "**Go:**\n"
+    emit "```go\n"
+    emit "for i := 0; i < 5; i++ {\n"
+    emit "    fmt.Println(i)\n"
+    emit "}\n"
+    emit "```"
+
+elif "error" in lower(user_msg) or "debug" in lower(user_msg):
+    emit "Debugging tips:\n\n"
+    emit "1. 🔍 **Read the error message carefully** - it usually tells you what's wrong\n"
+    emit "2. 🪵 **Add logging/print statements** to see variable values\n"
+    emit "3. 🔄 **Check your assumptions** - is the data what you expect?\n"
+    emit "4. 🧪 **Test in isolation** - break the problem into smaller parts\n"
+    emit "5. 🔎 **Use a debugger** - step through your code line by line\n\n"
+    emit "Share your error message and I can help more specifically!"
+
+elif "best practice" in lower(user_msg):
+    emit "Good coding practices:\n\n"
+    emit "✅ **Use meaningful variable names**\n"
+    emit "✅ **Keep functions small and focused**\n"
+    emit "✅ **Write comments for complex logic**\n"
+    emit "✅ **Handle errors gracefully**\n"
+    emit "✅ **Test your code**\n"
+    emit "✅ **Follow language conventions**\n"
+    emit "✅ **Keep code DRY (Don't Repeat Yourself)**\n\n"
+    emit "Which language are you coding in?"
+
+else:
+    emit "I'm your Code Helper! 👨‍💻\n\n"
+    emit "I can help with:\n"
+    emit "• Writing functions and loops\n"
+    emit "• Debugging errors\n"
+    emit "• Code examples in Python, JavaScript, Go, and more\n"
+    emit "• Best practices and tips\n\n"
+    emit "Just ask me about a programming concept or share your code question!"

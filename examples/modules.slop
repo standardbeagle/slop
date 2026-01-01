@@ -1,0 +1,32 @@
+===SOURCE: math===
+id: "lib/math@v1"
+uses: {}
+---
+def add(a, b):
+    return a + b
+
+def multiply(a, b):
+    return a * b
+
+def square(n):
+    return multiply(n, n)
+
+===SOURCE: calculator===
+id: "lib/calculator@v1"
+uses: {math: "lib/math@v1"}
+---
+def sum_of_squares(a, b):
+    sq_a = math.square(a)
+    sq_b = math.square(b)
+    return math.add(sq_a, sq_b)
+
+def distance(x1, y1, x2, y2):
+    dx = math.add(x2, math.multiply(x1, -1))
+    dy = math.add(y2, math.multiply(y1, -1))
+    return sum_of_squares(dx, dy)
+
+===USE: lib/calculator@v1===
+
+===MAIN===
+result = calculator.sum_of_squares(3, 4)
+emit(result)

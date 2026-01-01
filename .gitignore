@@ -1,0 +1,30 @@
+# Environment variables with API keys
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+slop
+examples/chat-app/slop-chat
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binaries
+*.test
+
+# Coverage
+*.out
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
