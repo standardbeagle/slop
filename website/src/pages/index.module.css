@@ -1,0 +1,57 @@
+.heroBanner {
+  padding: 4rem 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.heroDescription {
+  font-size: 1.2rem;
+  margin: 1.5rem auto;
+  max-width: 700px;
+  opacity: 0.95;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 2rem 0;
+  flex-wrap: wrap;
+}
+
+.codeExample {
+  margin-top: 2rem;
+  display: inline-block;
+  text-align: left;
+}
+
+.codeExample pre {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 1.5rem;
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  margin: 0;
+}
+
+.codeExample code {
+  color: #fff;
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2rem;
+  }
+
+  .buttons {
+    flex-direction: column;
+  }
+
+  .buttons .margin-left--md {
+    margin-left: 0 !important;
+  }
+}

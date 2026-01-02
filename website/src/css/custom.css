@@ -1,0 +1,86 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-color-primary: #667eea;
+  --ifm-color-primary-dark: #4c63e6;
+  --ifm-color-primary-darker: #3e56e4;
+  --ifm-color-primary-darkest: #2339d8;
+  --ifm-color-primary-light: #8099ee;
+  --ifm-color-primary-lighter: #8ea6f0;
+  --ifm-color-primary-lightest: #b8c8f5;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #8099ee;
+  --ifm-color-primary-dark: #667eea;
+  --ifm-color-primary-darker: #5870e8;
+  --ifm-color-primary-darkest: #3e56e4;
+  --ifm-color-primary-light: #a0b4f2;
+  --ifm-color-primary-lighter: #aec1f4;
+  --ifm-color-primary-lightest: #d4dff9;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+.hero {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.hero__title {
+  font-size: 3.5rem;
+  font-weight: 800;
+}
+
+.hero__subtitle {
+  font-size: 1.5rem;
+  opacity: 0.9;
+}
+
+.button--primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+}
+
+.button--primary:hover {
+  background: linear-gradient(135deg, #5870e8 0%, #6a4391 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Code block styling */
+code {
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+[data-theme='dark'] code {
+  background: rgba(128, 153, 238, 0.1);
+  border-color: rgba(128, 153, 238, 0.2);
+}
+
+/* Feature cards */
+.feature {
+  padding: 2rem;
+  border-radius: 8px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.feature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Syntax highlighting for SLOP language */
+.language-slop {
+  background: #2a2a2a;
+}

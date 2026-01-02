@@ -28,3 +28,10 @@ examples/chat-app/slop-chat
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation site
+website/node_modules/
+website/build/
+website/.docusaurus/
+website/.cache-loader/
+website/package-lock.json
