@@ -54,6 +54,83 @@ type Walkable interface {
 	WalkNode(v Visitor) error
 }
 
+// WalkSlice traverses a generic slice of nodes in order.
+// T must satisfy the Node interface (e.g., Statement, Expression, *Identifier).
+func WalkSlice[T Node](v Visitor, nodes []T) error {
+	for _, node := range nodes {
+		if err := Walk(v, node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// WalkOptional traverses a node only if it is non-nil.
+func WalkOptional(v Visitor, node Node) error {
+	if node != nil {
+		return Walk(v, node)
+	}
+	return nil
+}
+
+// walkMatchArms traverses match statement/expression arms.
+func walkMatchArms(v Visitor, arms []*MatchArm) error {
+	for _, arm := range arms {
+		if err := Walk(v, arm.Pattern); err != nil {
+			return err
+		}
+		if err := WalkOptional(v, arm.Guard); err != nil {
+			return err
+		}
+		if err := Walk(v, arm.Body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkNamedMap traverses a map of named expressions.
+// Note: Iteration order is non-deterministic. Visitors should not rely on order.
+func walkNamedMap(v Visitor, named map[string]Expression) error {
+	for _, val := range named {
+		if err := Walk(v, val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkCatchClauses traverses try statement catch clauses.
+func walkCatchClauses(v Visitor, catches []*CatchClause) error {
+	for _, c := range catches {
+		if err := Walk(v, c.Body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkSchemaFields traverses schema fields.
+func walkSchemaFields(v Visitor, fields []*SchemaField) error {
+	for _, f := range fields {
+		if err := Walk(v, f.Type); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkConstraints traverses type constraints.
+// Note: Iteration order is non-deterministic. Visitors should not rely on order.
+func walkConstraints(v Visitor, constraints map[string]Expression) error {
+	for _, c := range constraints {
+		if err := Walk(v, c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Walk traverses the AST calling the visitor for each node.
 // If the node implements Walkable, it delegates to the node's WalkNode method.
 // Otherwise, it uses the traditional switch-based traversal.
@@ -64,49 +141,40 @@ func Walk(v Visitor, node Node) error {
 	}
 
 	// Fall back to switch-based traversal for nodes that don't implement Walkable
+	return walkNodeSwitch(v, node)
+}
+
+// walkNodeSwitch handles switch-based traversal for nodes that don't implement Walkable.
+// Extracted to reduce cyclomatic complexity of Walk.
+func walkNodeSwitch(v Visitor, node Node) error {
 	switch n := node.(type) {
+	// Statements
 	case *Program:
 		if err := v.VisitProgram(n); err != nil {
 			return err
 		}
-		for _, stmt := range n.Statements {
-			if err := Walk(v, stmt); err != nil {
-				return err
-			}
-		}
+		return WalkSlice(v, n.Statements)
 
 	case *Block:
 		if err := v.VisitBlock(n); err != nil {
 			return err
 		}
-		for _, stmt := range n.Statements {
-			if err := Walk(v, stmt); err != nil {
-				return err
-			}
-		}
+		return WalkSlice(v, n.Statements)
 
 	case *ExpressionStatement:
 		if err := v.VisitExpressionStatement(n); err != nil {
 			return err
 		}
-		if n.Expression != nil {
-			if err := Walk(v, n.Expression); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Expression)
 
 	case *AssignStatement:
 		if err := v.VisitAssignStatement(n); err != nil {
 			return err
 		}
-		for _, t := range n.Targets {
-			if err := Walk(v, t); err != nil {
-				return err
-			}
-		}
-		if err := Walk(v, n.Value); err != nil {
+		if err := WalkSlice(v, n.Targets); err != nil {
 			return err
 		}
+		return Walk(v, n.Value)
 
 	case *IfStatement:
 		if err := v.VisitIfStatement(n); err != nil {
@@ -118,11 +186,7 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Consequence); err != nil {
 			return err
 		}
-		if n.Alternative != nil {
-			if err := Walk(v, n.Alternative); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Alternative)
 
 	case *ForStatement:
 		if err := v.VisitForStatement(n); err != nil {
@@ -131,17 +195,13 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Variable); err != nil {
 			return err
 		}
-		if n.Index != nil {
-			if err := Walk(v, n.Index); err != nil {
-				return err
-			}
+		if err := WalkOptional(v, n.Index); err != nil {
+			return err
 		}
 		if err := Walk(v, n.Iterable); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Body); err != nil {
-			return err
-		}
+		return Walk(v, n.Body)
 
 	case *MatchStatement:
 		if err := v.VisitMatchStatement(n); err != nil {
@@ -150,19 +210,7 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Subject); err != nil {
 			return err
 		}
-		for _, arm := range n.Arms {
-			if err := Walk(v, arm.Pattern); err != nil {
-				return err
-			}
-			if arm.Guard != nil {
-				if err := Walk(v, arm.Guard); err != nil {
-					return err
-				}
-			}
-			if err := Walk(v, arm.Body); err != nil {
-				return err
-			}
-		}
+		return walkMatchArms(v, n.Arms)
 
 	case *DefStatement:
 		if err := v.VisitDefStatement(n); err != nil {
@@ -171,39 +219,25 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Name); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Body); err != nil {
-			return err
-		}
+		return Walk(v, n.Body)
 
 	case *ReturnStatement:
 		if err := v.VisitReturnStatement(n); err != nil {
 			return err
 		}
-		if n.Value != nil {
-			if err := Walk(v, n.Value); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Value)
 
 	case *EmitStatement:
 		if err := v.VisitEmitStatement(n); err != nil {
 			return err
 		}
-		for _, val := range n.Values {
-			if err := Walk(v, val); err != nil {
-				return err
-			}
-		}
-		for _, val := range n.Named {
-			if err := Walk(v, val); err != nil {
-				return err
-			}
-		}
-
-	case *StopStatement:
-		if err := v.VisitStopStatement(n); err != nil {
+		if err := WalkSlice(v, n.Values); err != nil {
 			return err
 		}
+		return walkNamedMap(v, n.Named)
+
+	case *StopStatement:
+		return v.VisitStopStatement(n)
 
 	case *TryStatement:
 		if err := v.VisitTryStatement(n); err != nil {
@@ -212,23 +246,15 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Body); err != nil {
 			return err
 		}
-		for _, c := range n.Catches {
-			if err := Walk(v, c.Body); err != nil {
-				return err
-			}
-		}
+		return walkCatchClauses(v, n.Catches)
 
 	case *BreakStatement:
-		if err := v.VisitBreakStatement(n); err != nil {
-			return err
-		}
+		return v.VisitBreakStatement(n)
 
 	case *ContinueStatement:
-		if err := v.VisitContinueStatement(n); err != nil {
-			return err
-		}
+		return v.VisitContinueStatement(n)
 
-	// Expressions
+	// Expressions - simple leaf nodes (no traversal needed)
 	case *Identifier:
 		return v.VisitIdentifier(n)
 
@@ -247,15 +273,15 @@ func Walk(v Visitor, node Node) error {
 	case *NoneLiteral:
 		return v.VisitNoneLiteral(n)
 
+	case *EnumExpression:
+		return v.VisitEnumExpression(n)
+
+	// Expressions - collection literals
 	case *ListLiteral:
 		if err := v.VisitListLiteral(n); err != nil {
 			return err
 		}
-		for _, e := range n.Elements {
-			if err := Walk(v, e); err != nil {
-				return err
-			}
-		}
+		return WalkSlice(v, n.Elements)
 
 	case *MapLiteral:
 		if err := v.VisitMapLiteral(n); err != nil {
@@ -269,24 +295,20 @@ func Walk(v Visitor, node Node) error {
 				return err
 			}
 		}
+		return nil
 
 	case *SetLiteral:
 		if err := v.VisitSetLiteral(n); err != nil {
 			return err
 		}
-		for _, e := range n.Elements {
-			if err := Walk(v, e); err != nil {
-				return err
-			}
-		}
+		return WalkSlice(v, n.Elements)
 
+	// Expressions - unary/binary operators
 	case *PrefixExpression:
 		if err := v.VisitPrefixExpression(n); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Right); err != nil {
-			return err
-		}
+		return Walk(v, n.Right)
 
 	case *InfixExpression:
 		if err := v.VisitInfixExpression(n); err != nil {
@@ -295,10 +317,9 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Left); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Right); err != nil {
-			return err
-		}
+		return Walk(v, n.Right)
 
+	// Expressions - call/index operations
 	case *CallExpression:
 		if err := v.VisitCallExpression(n); err != nil {
 			return err
@@ -306,16 +327,10 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Function); err != nil {
 			return err
 		}
-		for _, a := range n.Arguments {
-			if err := Walk(v, a); err != nil {
-				return err
-			}
+		if err := WalkSlice(v, n.Arguments); err != nil {
+			return err
 		}
-		for _, val := range n.Kwargs {
-			if err := Walk(v, val); err != nil {
-				return err
-			}
-		}
+		return walkNamedMap(v, n.Kwargs)
 
 	case *IndexExpression:
 		if err := v.VisitIndexExpression(n); err != nil {
@@ -324,9 +339,7 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Left); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Index); err != nil {
-			return err
-		}
+		return Walk(v, n.Index)
 
 	case *SliceExpression:
 		if err := v.VisitSliceExpression(n); err != nil {
@@ -335,21 +348,13 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Left); err != nil {
 			return err
 		}
-		if n.Start != nil {
-			if err := Walk(v, n.Start); err != nil {
-				return err
-			}
+		if err := WalkOptional(v, n.Start); err != nil {
+			return err
 		}
-		if n.End != nil {
-			if err := Walk(v, n.End); err != nil {
-				return err
-			}
+		if err := WalkOptional(v, n.End); err != nil {
+			return err
 		}
-		if n.Step != nil {
-			if err := Walk(v, n.Step); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Step)
 
 	case *MemberExpression:
 		if err := v.VisitMemberExpression(n); err != nil {
@@ -358,22 +363,16 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Object); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Property); err != nil {
-			return err
-		}
+		return Walk(v, n.Property)
 
 	case *LambdaExpression:
 		if err := v.VisitLambdaExpression(n); err != nil {
 			return err
 		}
-		for _, p := range n.Parameters {
-			if err := Walk(v, p); err != nil {
-				return err
-			}
-		}
-		if err := Walk(v, n.Body); err != nil {
+		if err := WalkSlice(v, n.Parameters); err != nil {
 			return err
 		}
+		return Walk(v, n.Body)
 
 	case *PipelineExpression:
 		if err := v.VisitPipelineExpression(n); err != nil {
@@ -382,9 +381,7 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Left); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Right); err != nil {
-			return err
-		}
+		return Walk(v, n.Right)
 
 	case *TernaryExpression:
 		if err := v.VisitTernaryExpression(n); err != nil {
@@ -396,9 +393,7 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Consequence); err != nil {
 			return err
 		}
-		if err := Walk(v, n.Alternative); err != nil {
-			return err
-		}
+		return Walk(v, n.Alternative)
 
 	case *MatchExpression:
 		if err := v.VisitMatchExpression(n); err != nil {
@@ -407,19 +402,7 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Subject); err != nil {
 			return err
 		}
-		for _, arm := range n.Arms {
-			if err := Walk(v, arm.Pattern); err != nil {
-				return err
-			}
-			if arm.Guard != nil {
-				if err := Walk(v, arm.Guard); err != nil {
-					return err
-				}
-			}
-			if err := Walk(v, arm.Body); err != nil {
-				return err
-			}
-		}
+		return walkMatchArms(v, n.Arms)
 
 	case *ListComprehension:
 		if err := v.VisitListComprehension(n); err != nil {
@@ -431,19 +414,13 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Variable); err != nil {
 			return err
 		}
-		if n.Index != nil {
-			if err := Walk(v, n.Index); err != nil {
-				return err
-			}
+		if err := WalkOptional(v, n.Index); err != nil {
+			return err
 		}
 		if err := Walk(v, n.Iterable); err != nil {
 			return err
 		}
-		if n.Filter != nil {
-			if err := Walk(v, n.Filter); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Filter)
 
 	case *MapComprehension:
 		if err := v.VisitMapComprehension(n); err != nil {
@@ -464,57 +441,34 @@ func Walk(v Visitor, node Node) error {
 		if err := Walk(v, n.Iterable); err != nil {
 			return err
 		}
-		if n.Filter != nil {
-			if err := Walk(v, n.Filter); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Filter)
 
 	case *SchemaExpression:
 		if err := v.VisitSchemaExpression(n); err != nil {
 			return err
 		}
-		for _, f := range n.Fields {
-			if err := Walk(v, f.Type); err != nil {
-				return err
-			}
-		}
-
-	case *EnumExpression:
-		return v.VisitEnumExpression(n)
+		return walkSchemaFields(v, n.Fields)
 
 	case *TypeExpression:
 		if err := v.VisitTypeExpression(n); err != nil {
 			return err
 		}
-		if n.Inner != nil {
-			if err := Walk(v, n.Inner); err != nil {
-				return err
-			}
+		if err := WalkOptional(v, n.Inner); err != nil {
+			return err
 		}
-		for _, c := range n.Constraints {
-			if err := Walk(v, c); err != nil {
-				return err
-			}
-		}
+		return walkConstraints(v, n.Constraints)
 
 	case *RangeExpression:
 		if err := v.VisitRangeExpression(n); err != nil {
 			return err
 		}
-		if n.Start != nil {
-			if err := Walk(v, n.Start); err != nil {
-				return err
-			}
+		if err := WalkOptional(v, n.Start); err != nil {
+			return err
 		}
 		if err := Walk(v, n.End); err != nil {
 			return err
 		}
-		if n.Step != nil {
-			if err := Walk(v, n.Step); err != nil {
-				return err
-			}
-		}
+		return WalkOptional(v, n.Step)
 	}
 
 	return nil

@@ -34,35 +34,34 @@ func (e *Evaluator) Context() *Context {
 }
 
 // Eval evaluates an AST node and returns the result.
+// This is the main entry point for the interpreter. It dispatches to the
+// appropriate evaluation method based on the node type.
 func (e *Evaluator) Eval(node ast.Node) (Value, error) {
-	switch n := node.(type) {
+	if node == nil {
+		return nil, nil
+	}
+	return evalNode(e, node)
+}
+
+// evalNode dispatches to specific evaluation functions based on node type.
+// Extracted from Eval to separate nil checking from type dispatching.
+func evalNode(e *Evaluator, node ast.Node) (Value, error) {
+	switch node := node.(type) {
 	// Program
 	case *ast.Program:
-		return e.evalProgram(n)
+		return e.evalProgram(node)
 
-	// Statements
+	// Control flow statements
 	case *ast.Block:
-		return e.evalBlock(n)
-	case *ast.ExpressionStatement:
-		return e.Eval(n.Expression)
-	case *ast.AssignStatement:
-		return e.evalAssignment(n)
-	case *ast.IfStatement:
-		return e.evalIfStatement(n)
-	case *ast.ForStatement:
-		return e.evalForStatement(n)
-	case *ast.MatchStatement:
-		return e.evalMatchStatement(n)
-	case *ast.DefStatement:
-		return e.evalDefStatement(n)
+		return e.evalBlock(node)
 	case *ast.ReturnStatement:
-		return e.evalReturnStatement(n)
+		return e.evalReturnStatement(node)
 	case *ast.EmitStatement:
-		return e.evalEmitStatement(n)
+		return e.evalEmitStatement(node)
 	case *ast.StopStatement:
-		return e.evalStopStatement(n)
+		return e.evalStopStatement(node)
 	case *ast.TryStatement:
-		return e.evalTryStatement(n)
+		return e.evalTryStatement(node)
 	case *ast.BreakStatement:
 		e.ctx.SetBreak()
 		return NONE, nil
@@ -70,51 +69,83 @@ func (e *Evaluator) Eval(node ast.Node) (Value, error) {
 		e.ctx.SetContinue()
 		return NONE, nil
 
-	// Expressions
-	case *ast.Identifier:
-		return e.evalIdentifier(n)
+	// Conditional and loop statements
+	case *ast.IfStatement:
+		return e.evalIfStatement(node)
+	case *ast.ForStatement:
+		return e.evalForStatement(node)
+	case *ast.MatchStatement:
+		return e.evalMatchStatement(node)
+
+	// Definition and assignment
+	case *ast.DefStatement:
+		return e.evalDefStatement(node)
+	case *ast.AssignStatement:
+		return e.evalAssignment(node)
+
+	// Expression statements (just evaluate the expression)
+	case *ast.ExpressionStatement:
+		return e.Eval(node.Expression)
+
+	// Literals
 	case *ast.IntegerLiteral:
-		return &IntValue{Value: n.Value}, nil
+		return &IntValue{Value: node.Value}, nil
 	case *ast.FloatLiteral:
-		return &FloatValue{Value: n.Value}, nil
+		return &FloatValue{Value: node.Value}, nil
 	case *ast.StringLiteral:
-		return &StringValue{Value: n.Value}, nil
+		return &StringValue{Value: node.Value}, nil
 	case *ast.BooleanLiteral:
-		return NewBool(n.Value), nil
+		return NewBool(node.Value), nil
 	case *ast.NoneLiteral:
 		return NONE, nil
+
+	// Collection literals
 	case *ast.ListLiteral:
-		return e.evalListLiteral(n)
+		return e.evalListLiteral(node)
 	case *ast.MapLiteral:
-		return e.evalMapLiteral(n)
+		return e.evalMapLiteral(node)
 	case *ast.SetLiteral:
-		return e.evalSetLiteral(n)
+		return e.evalSetLiteral(node)
+
+	// Operators and expressions
+	case *ast.Identifier:
+		return e.evalIdentifier(node)
 	case *ast.PrefixExpression:
-		return e.evalPrefixExpression(n)
+		return e.evalPrefixExpression(node)
 	case *ast.InfixExpression:
-		return e.evalInfixExpression(n)
-	case *ast.CallExpression:
-		return e.evalCallExpression(n)
-	case *ast.IndexExpression:
-		return e.evalIndexExpression(n)
-	case *ast.SliceExpression:
-		return e.evalSliceExpression(n)
-	case *ast.MemberExpression:
-		return e.evalMemberExpression(n)
-	case *ast.LambdaExpression:
-		return e.evalLambdaExpression(n)
-	case *ast.PipelineExpression:
-		return e.evalPipelineExpression(n)
+		return e.evalInfixExpression(node)
 	case *ast.TernaryExpression:
-		return e.evalTernaryExpression(n)
+		return e.evalTernaryExpression(node)
+
+	// Index and slice operations
+	case *ast.IndexExpression:
+		return e.evalIndexExpression(node)
+	case *ast.SliceExpression:
+		return e.evalSliceExpression(node)
+
+	// Member and property access
+	case *ast.MemberExpression:
+		return e.evalMemberExpression(node)
+
+	// Call and invocation
+	case *ast.CallExpression:
+		return e.evalCallExpression(node)
+	case *ast.PipelineExpression:
+		return e.evalPipelineExpression(node)
+
+	// Lambda and functional
+	case *ast.LambdaExpression:
+		return e.evalLambdaExpression(node)
+
+	// Pattern matching and iteration
 	case *ast.MatchExpression:
-		return e.evalMatchExpression(n)
+		return e.evalMatchExpression(node)
 	case *ast.RangeExpression:
-		return e.evalRangeExpression(n)
+		return e.evalRangeExpression(node)
 	case *ast.ListComprehension:
-		return e.evalListComprehension(n)
+		return e.evalListComprehension(node)
 	case *ast.MapComprehension:
-		return e.evalMapComprehension(n)
+		return e.evalMapComprehension(node)
 
 	default:
 		return nil, fmt.Errorf("unknown node type: %T", node)
