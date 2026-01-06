@@ -62,6 +62,9 @@ func (r *Registry) registerUtilityFunctions() {
 
 	// UUID
 	r.Register("uuid", builtinUuid)
+
+	// Template matching
+	r.Register("match", builtinMatch)
 }
 
 // Time functions
