@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 func (r *Registry) registerListFunctions() {

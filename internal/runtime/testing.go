@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/anthropics/slop/internal/ast"
-	"github.com/anthropics/slop/internal/builtin"
-	"github.com/anthropics/slop/internal/evaluator"
-	"github.com/anthropics/slop/internal/lexer"
-	"github.com/anthropics/slop/internal/parser"
+	"github.com/standardbeagle/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/builtin"
+	"github.com/standardbeagle/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/parser"
 )
 
 // =============================================================================

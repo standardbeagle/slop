@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/anthropics/slop/internal/ast"
-	"github.com/anthropics/slop/internal/limits"
+	"github.com/standardbeagle/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/limits"
 )
 
 // Evaluator is a tree-walking interpreter for SLOP.

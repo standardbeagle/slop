@@ -4,7 +4,7 @@ package parser
 import (
 	"fmt"
 
-	"github.com/anthropics/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/lexer"
 )
 
 // Error represents a parsing error.

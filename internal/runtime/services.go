@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // ServiceWithContext extends the evaluator.Service interface with context support

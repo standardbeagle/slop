@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anthropics/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/ast"
 )
 
 // Value represents a runtime value in SLOP.

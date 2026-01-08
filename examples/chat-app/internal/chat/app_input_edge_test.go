@@ -3,8 +3,8 @@ package chat
 import (
 	"testing"
 
-	"github.com/anthropics/slop/examples/chat-app/internal/config"
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/config"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // TestInputVariableEdgeCases tests edge cases with input variable handling

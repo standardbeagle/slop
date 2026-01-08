@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anthropics/slop/examples/chat-app/internal/config"
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/config"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // TestRunScriptWithInput tests providing input context to scripts

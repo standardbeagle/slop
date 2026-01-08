@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))

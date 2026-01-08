@@ -3,7 +3,7 @@ package evaluator
 import (
 	"fmt"
 
-	"github.com/anthropics/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/ast"
 )
 
 // ModuleResolver handles module dependency resolution and wiring.

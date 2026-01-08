@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/anthropics/slop/examples/chat-app/internal/chat"
-	"github.com/anthropics/slop/examples/chat-app/internal/config"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/chat"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/config"
 	"github.com/spf13/cobra"
 )
 

@@ -3,7 +3,7 @@ package mcp
 import (
 	"fmt"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // Service adapts an MCP client to the SLOP Service interface.

@@ -6,7 +6,7 @@ package analyzer
 import (
 	"fmt"
 
-	"github.com/anthropics/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/ast"
 )
 
 // Analyzer performs semantic analysis on SLOP programs.

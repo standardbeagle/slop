@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/anthropics/slop/examples/chat-app/internal/config"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/config"
 )
 
 // TestRunScriptSimpleChat tests running the simple_chat.slop script

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/anthropics/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/lexer"
 )
 
 // Node is the interface that all AST nodes implement.

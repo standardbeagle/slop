@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anthropics/slop/internal/ast"
-	"github.com/anthropics/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/lexer"
 )
 
 // Precedence levels for Pratt parsing.

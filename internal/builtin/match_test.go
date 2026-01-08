@@ -3,7 +3,7 @@ package builtin
 import (
 	"testing"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

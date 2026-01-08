@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // LLMClient is the interface for LLM providers.

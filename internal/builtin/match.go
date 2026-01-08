@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // PatternSpec defines a named pattern with its regex and optional conversion.

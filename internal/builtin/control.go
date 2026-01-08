@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // Store is a simple in-memory key-value store.

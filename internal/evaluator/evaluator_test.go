@@ -3,8 +3,8 @@ package evaluator
 import (
 	"testing"
 
-	"github.com/anthropics/slop/internal/lexer"
-	"github.com/anthropics/slop/internal/parser"
+	"github.com/standardbeagle/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

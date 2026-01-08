@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 func (r *Registry) registerUtilityFunctions() {

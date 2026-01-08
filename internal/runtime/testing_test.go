@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // =============================================================================

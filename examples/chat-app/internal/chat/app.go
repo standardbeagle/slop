@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/anthropics/slop/examples/chat-app/internal/config"
-	"github.com/anthropics/slop/examples/chat-app/internal/mcp"
-	"github.com/anthropics/slop/internal/evaluator"
-	"github.com/anthropics/slop/internal/lexer"
-	"github.com/anthropics/slop/internal/parser"
-	"github.com/anthropics/slop/pkg/slop"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/config"
+	"github.com/standardbeagle/slop/examples/chat-app/internal/mcp"
+	"github.com/standardbeagle/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/parser"
+	"github.com/standardbeagle/slop/pkg/slop"
 )
 
 // ToolInfo holds information about an available tool.

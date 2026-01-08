@@ -1,4 +1,4 @@
-module github.com/anthropics/slop
+module github.com/standardbeagle/slop
 
 go 1.23.0
 

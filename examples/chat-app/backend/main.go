@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/slop/internal/evaluator"
-	"github.com/anthropics/slop/internal/lexer"
-	"github.com/anthropics/slop/internal/parser"
-	"github.com/anthropics/slop/internal/runtime"
+	"github.com/standardbeagle/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/parser"
+	"github.com/standardbeagle/slop/internal/runtime"
 )
 
 type ChatMessage struct {

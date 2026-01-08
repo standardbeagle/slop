@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/anthropics/slop/internal/ast"
-	"github.com/anthropics/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/lexer"
 )
 
 func TestParseSourceModule(t *testing.T) {

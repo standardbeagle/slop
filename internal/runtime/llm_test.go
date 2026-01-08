@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 func TestValueToSchema(t *testing.T) {

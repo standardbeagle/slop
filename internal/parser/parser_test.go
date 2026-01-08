@@ -3,8 +3,8 @@ package parser
 import (
 	"testing"
 
-	"github.com/anthropics/slop/internal/ast"
-	"github.com/anthropics/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/ast"
+	"github.com/standardbeagle/slop/internal/lexer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

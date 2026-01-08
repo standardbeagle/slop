@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"sync"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

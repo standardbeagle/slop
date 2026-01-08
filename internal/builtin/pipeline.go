@@ -3,7 +3,7 @@ package builtin
 import (
 	"fmt"
 
-	"github.com/anthropics/slop/internal/evaluator"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // PipelineFuncCaller is an interface for calling functions during pipeline operations.
