@@ -164,15 +164,37 @@ func (a *App) RunInteractive() error {
 
 // RunScript runs a SLOP script.
 func (a *App) RunScript(scriptPath string) error {
-	// Resolve script path
+	// Resolve script path - try multiple locations
+	var content []byte
+	var err error
+
+	// Try paths in order: as-is, then with scripts dir prefix
+	pathsToTry := []string{scriptPath}
 	if !filepath.IsAbs(scriptPath) {
-		scriptPath = filepath.Join(a.cfg.ScriptsDir, scriptPath)
+		pathsToTry = append(pathsToTry, filepath.Join(a.cfg.ScriptsDir, scriptPath))
 	}
 
-	// Read script
-	content, err := os.ReadFile(scriptPath)
+	// Add .slop extension if not present
+	for i, p := range pathsToTry {
+		if !strings.HasSuffix(p, ".slop") {
+			pathsToTry = append(pathsToTry, p+".slop")
+			// Also try with scripts dir
+			if !filepath.IsAbs(p) && i == 0 {
+				pathsToTry = append(pathsToTry, filepath.Join(a.cfg.ScriptsDir, p+".slop"))
+			}
+		}
+	}
+
+	for _, p := range pathsToTry {
+		content, err = os.ReadFile(p)
+		if err == nil {
+			scriptPath = p
+			break
+		}
+	}
+
 	if err != nil {
-		return fmt.Errorf("failed to read script: %w", err)
+		return fmt.Errorf("failed to read script: %w (tried: %v)", err, pathsToTry)
 	}
 
 	// Parse script
@@ -224,22 +246,25 @@ func (a *App) processMessage(input string) error {
 	// Add user message to history
 	a.history = append(a.history, Message{Role: "user", Content: input})
 
-	// Create a simple response script
-	script := fmt.Sprintf(`
-# Process user message using LLM
+	// Build the prompt text using string concatenation (SLOP doesn't support triple-quoted strings)
+	promptParts := []string{
+		"You are a helpful assistant. Respond to the user's message.",
+		"",
+		a.formatHistory(),
+		"",
+		"User: " + input,
+	}
+	promptText := escapeForSLOP(strings.Join(promptParts, "\n"))
+
+	// Create a simple response script using string concatenation
+	script := fmt.Sprintf(`# Process user message using LLM
 response = llm.call(
-    prompt: """
-You are a helpful assistant. Respond to the user's message.
-
-%s
-
-User: %s
-""",
+    prompt: "%s",
     schema: {response: string}
 )
 
 emit(response.response)
-`, a.formatHistory(), input)
+`, promptText)
 
 	// Parse and run
 	l := lexer.New(script)
@@ -337,4 +362,14 @@ func (a *App) printHelp() {
   help        - Show this help message
 
 Or just type a message to chat with the AI.`)
+}
+
+// escapeForSLOP escapes a string for use in SLOP string literals.
+func escapeForSLOP(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\t", "\\t")
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	return s
 }
