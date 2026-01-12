@@ -535,3 +535,115 @@ result`
 	assert.Equal(t, int64(0), first.Elements[0].(*IntValue).Value)
 	assert.Equal(t, "a", first.Elements[1].(*StringValue).Value)
 }
+
+func TestEvalPauseStatement(t *testing.T) {
+	t.Run("pause without message", func(t *testing.T) {
+		input := `x = 1
+pause
+x = 2`
+
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors())
+
+		e := New()
+		_, err := e.Eval(program)
+		require.NoError(t, err)
+
+		// Should have paused, x should still be 1
+		x, ok := e.ctx.Scope.Get("x")
+		require.True(t, ok)
+		assert.Equal(t, int64(1), x.(*IntValue).Value)
+		assert.True(t, e.ctx.ShouldPause())
+		assert.Equal(t, "", e.ctx.GetPauseMessage())
+	})
+
+	t.Run("pause with message", func(t *testing.T) {
+		input := `x = 42
+pause "checkpoint 1"
+x = 100`
+
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors())
+
+		e := New()
+		_, err := e.Eval(program)
+		require.NoError(t, err)
+
+		// Should have paused with message
+		x, ok := e.ctx.Scope.Get("x")
+		require.True(t, ok)
+		assert.Equal(t, int64(42), x.(*IntValue).Value)
+		assert.True(t, e.ctx.ShouldPause())
+		assert.Equal(t, "checkpoint 1", e.ctx.GetPauseMessage())
+	})
+
+	t.Run("pause with expression message", func(t *testing.T) {
+		input := `name = "test"
+pause name + " checkpoint"
+x = 1`
+
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors())
+
+		e := New()
+		_, err := e.Eval(program)
+		require.NoError(t, err)
+
+		assert.True(t, e.ctx.ShouldPause())
+		assert.Equal(t, "test checkpoint", e.ctx.GetPauseMessage())
+	})
+
+	t.Run("pause in function", func(t *testing.T) {
+		input := `def process():
+    x = 1
+    pause "in function"
+    x = 2
+    return x
+
+result = process()`
+
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors())
+
+		e := New()
+		_, err := e.Eval(program)
+		require.NoError(t, err)
+
+		// Should have paused inside function
+		assert.True(t, e.ctx.ShouldPause())
+		assert.Equal(t, "in function", e.ctx.GetPauseMessage())
+	})
+
+	t.Run("pause in loop", func(t *testing.T) {
+		input := `count = 0
+for i in range(5):
+    count = count + 1
+    if count == 3:
+        pause "at count 3"
+count`
+
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors())
+
+		e := New()
+		_, err := e.Eval(program)
+		require.NoError(t, err)
+
+		// Should have paused at count 3
+		count, ok := e.ctx.Scope.Get("count")
+		require.True(t, ok)
+		assert.Equal(t, int64(3), count.(*IntValue).Value)
+		assert.True(t, e.ctx.ShouldPause())
+		assert.Equal(t, "at count 3", e.ctx.GetPauseMessage())
+	})
+}

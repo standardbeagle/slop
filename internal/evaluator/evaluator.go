@@ -68,6 +68,8 @@ func evalNode(e *Evaluator, node ast.Node) (Value, error) {
 	case *ast.ContinueStatement:
 		e.ctx.SetContinue()
 		return NONE, nil
+	case *ast.PauseStatement:
+		return e.evalPauseStatement(node)
 
 	// Conditional and loop statements
 	case *ast.IfStatement:
@@ -173,7 +175,7 @@ func (e *Evaluator) evalProgram(program *ast.Program) (Value, error) {
 			result, _ = e.ctx.GetReturn()
 			break
 		}
-		if e.ctx.ShouldStop() {
+		if e.ctx.ShouldStop() || e.ctx.ShouldPause() {
 			break
 		}
 	}
@@ -226,7 +228,7 @@ func (e *Evaluator) evalProgramWithModules(program *ast.Program) (Value, error) 
 				result, _ = e.ctx.GetReturn()
 				return result, nil
 			}
-			if e.ctx.ShouldStop() {
+			if e.ctx.ShouldStop() || e.ctx.ShouldPause() {
 				return result, nil
 			}
 		}
@@ -1246,7 +1248,7 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 		if e.ctx.ShouldContinue() {
 			e.ctx.ClearContinue()
 		}
-		if e.ctx.ShouldReturn() || e.ctx.ShouldStop() {
+		if e.ctx.ShouldReturn() || e.ctx.ShouldStop() || e.ctx.ShouldPause() {
 			break
 		}
 
@@ -1485,6 +1487,20 @@ func (e *Evaluator) evalEmitStatement(node *ast.EmitStatement) (Value, error) {
 
 func (e *Evaluator) evalStopStatement(node *ast.StopStatement) (Value, error) {
 	e.ctx.SetStop(node.Rollback)
+	return NONE, nil
+}
+
+func (e *Evaluator) evalPauseStatement(node *ast.PauseStatement) (Value, error) {
+	var message string
+	if node.Message != nil {
+		msgVal, err := e.Eval(node.Message)
+		if err != nil {
+			return nil, err
+		}
+		// Use the String() method from the Value interface
+		message = msgVal.String()
+	}
+	e.ctx.SetPause(message)
 	return NONE, nil
 }
 
