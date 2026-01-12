@@ -81,6 +81,7 @@ const (
 	CATCH
 	BREAK
 	CONTINUE
+	PAUSE
 
 	// Module keywords
 	SOURCE // ===SOURCE:
@@ -161,6 +162,7 @@ var tokenNames = map[TokenType]string{
 	CATCH:    "catch",
 	BREAK:    "break",
 	CONTINUE: "continue",
+	PAUSE:    "pause",
 
 	SOURCE: "SOURCE",
 	USE:    "USE",
@@ -197,6 +199,7 @@ var keywords = map[string]TokenType{
 	"catch":    CATCH,
 	"break":    BREAK,
 	"continue": CONTINUE,
+	"pause":    PAUSE,
 }
 
 // LookupIdent returns the token type for an identifier.
