@@ -7,7 +7,7 @@ user_msg = user_message
 response = ""
 
 if "hello" in lower(user_msg) or "hi" in lower(user_msg):
-    response = "Hello! 👋 How can I help you today?"
+    response = "Hello! How can I help you today?"
 elif "help" in lower(user_msg):
     response = "I'm here to assist you! You can ask me questions, request information, or just have a conversation. What would you like to know?"
 elif "weather" in lower(user_msg):
@@ -15,26 +15,21 @@ elif "weather" in lower(user_msg):
 elif "time" in lower(user_msg):
     response = "I don't have access to the current time, but you can check your device's clock!"
 elif "joke" in lower(user_msg):
-    jokes = [
-        "Why don't programmers like nature? It has too many bugs! 🐛",
-        "Why do programmers prefer dark mode? Because light attracts bugs! 💡🐛",
-        "How many programmers does it take to change a light bulb? None, that's a hardware problem! 💡",
-        "Why did the programmer quit? Because they didn't get arrays! 🤷"
-    ]
+    jokes = ["Why don't programmers like nature? It has too many bugs!", "Why do programmers prefer dark mode? Because light attracts bugs!", "How many programmers does it take to change a light bulb? None, that's a hardware problem!", "Why did the programmer quit? Because they didn't get arrays!"]
     response = random_choice(jokes)
 elif "name" in lower(user_msg):
-    response = "I'm SLOP Assistant, a conversational AI powered by SLOP scripts! Nice to meet you! 🤖"
+    response = "I'm SLOP Assistant, a conversational AI powered by SLOP scripts! Nice to meet you!"
 elif "thank" in lower(user_msg):
-    response = "You're very welcome! Happy to help! 😊"
+    response = "You're very welcome! Happy to help!"
 else:
     # Generic helpful response
     response = "I received your message: \"" + user_msg + "\"\n\n"
     response = response + "I'm a simple SLOP-powered assistant. I can:\n"
-    response = response + "• Greet you warmly\n"
-    response = response + "• Tell jokes\n"
-    response = response + "• Provide basic help\n"
-    response = response + "• Have friendly conversations\n\n"
+    response = response + "- Greet you warmly\n"
+    response = response + "- Tell jokes\n"
+    response = response + "- Provide basic help\n"
+    response = response + "- Have friendly conversations\n\n"
     response = response + "Try asking me for a joke or saying hello!"
 
 # Emit the response (this will be streamed to the client)
-emit response
+emit(response)

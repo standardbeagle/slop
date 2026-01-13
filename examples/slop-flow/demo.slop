@@ -1,0 +1,289 @@
+# =============================================================================
+# SLOP Flow - Consolidated Demo
+# =============================================================================
+# This is a self-contained demonstration of SLOP Flow workflow automation.
+# All modules are included in this single file for easy execution.
+#
+# Run with: slop run examples/slop-flow/demo.slop
+# =============================================================================
+
+# =============================================================================
+# MODULE: Workflow Engine Core
+# =============================================================================
+
+===SOURCE: workflow===
+id: "slop-flow/workflow@v1"
+uses: {}
+---
+
+def create_workflow(workflow_id, workflow_name, trigger_config):
+    return {id: workflow_id, name: workflow_name, trigger: trigger_config, nodes: [], status: "created", context: {}, error_handler: "stop"}
+
+def add_node(workflow, node):
+    new_nodes = get(workflow, "nodes") + [node]
+    return merge(workflow, {nodes: new_nodes})
+
+def set_error_handler(workflow, handler):
+    return merge(workflow, {error_handler: handler})
+
+def create_node(node_id, node_type, config):
+    return {id: node_id, type: node_type, config: config, next_node: "", status: "pending", retries: 0, max_retries: 3}
+
+def set_next(node, next_node_id):
+    return merge(node, {next_node: next_node_id})
+
+def start_workflow(workflow, input_data):
+    ctx = merge(get(workflow, "context"), {input: input_data, started_at: now(), current_node: 0})
+    return merge(workflow, {status: "running", context: ctx})
+
+def get_current_node(workflow):
+    nodes_list = get(workflow, "nodes")
+    current_idx = get(get(workflow, "context"), "current_node")
+    if current_idx >= len(nodes_list):
+        return {id: "__end__", type: "end"}
+    return nth(nodes_list, current_idx)
+
+def advance_workflow(workflow, node_result):
+    ctx = get(workflow, "context")
+    current_idx = get(ctx, "current_node")
+    results = get(ctx, "results", [])
+    new_results = results + [node_result]
+    new_ctx = merge(ctx, {current_node: current_idx + 1, results: new_results, last_result: node_result})
+    return merge(workflow, {context: new_ctx})
+
+def complete_workflow(workflow):
+    ctx = get(workflow, "context")
+    final_ctx = merge(ctx, {completed_at: now()})
+    return merge(workflow, {status: "completed", context: final_ctx})
+
+def fail_workflow(workflow, error_message):
+    ctx = get(workflow, "context")
+    final_ctx = merge(ctx, {failed_at: now(), error: error_message})
+    return merge(workflow, {status: "failed", context: final_ctx})
+
+def set_context_var(workflow, var_name, value):
+    ctx = get(workflow, "context")
+    new_ctx = merge(ctx, {var_name: value})
+    return merge(workflow, {context: new_ctx})
+
+def get_context_var(workflow, var_name, default_val):
+    ctx = get(workflow, "context")
+    if has_key(ctx, var_name):
+        return get(ctx, var_name)
+    return default_val
+
+def get_last_result(workflow):
+    return get(get(workflow, "context"), "last_result", {})
+
+def substitute_vars(template_str, context):
+    result = template_str
+    for pair in items(context) with limit(100):
+        key_name = first(pair)
+        val = last(pair)
+        placeholder = "{{" + str(key_name) + "}}"
+        result = replace(result, placeholder, str(val))
+    return result
+
+def workflow_summary(workflow):
+    ctx = get(workflow, "context")
+    return {id: get(workflow, "id"), name: get(workflow, "name"), status: get(workflow, "status"), node_count: len(get(workflow, "nodes")), results_count: len(get(ctx, "results", []))}
+
+# =============================================================================
+# MODULE: Triggers
+# =============================================================================
+
+===SOURCE: triggers===
+id: "slop-flow/triggers@v1"
+uses: {}
+---
+
+def manual_trigger(trigger_id):
+    return {id: trigger_id, type: "manual", config: {}}
+
+def schedule_trigger(trigger_id, cron_expr):
+    return {id: trigger_id, type: "schedule", config: {cron: cron_expr}}
+
+def every_hour(trigger_id):
+    return schedule_trigger(trigger_id, "0 * * * *")
+
+def every_day_at(trigger_id, hour, minute):
+    return schedule_trigger(trigger_id, str(minute) + " " + str(hour) + " * * *")
+
+def webhook_trigger(trigger_id, path):
+    return {id: trigger_id, type: "webhook", config: {path: path, method: "POST"}}
+
+def event_trigger(trigger_id, event_name):
+    return {id: trigger_id, type: "event", config: {event: event_name}}
+
+# =============================================================================
+# MODULE: Nodes
+# =============================================================================
+
+===SOURCE: nodes===
+id: "slop-flow/nodes@v1"
+uses: {workflow: "slop-flow/workflow@v1"}
+---
+
+def action_node(node_id, action_name, params):
+    base = workflow.create_node(node_id, "action", {action: action_name, params: params})
+    return base
+
+def transform_node(node_id, transform_type, config):
+    return workflow.create_node(node_id, "transform", {transform: transform_type, config: config})
+
+def condition_node(node_id, condition_expr, true_next, false_next):
+    base = workflow.create_node(node_id, "condition", {condition: condition_expr, true_next: true_next, false_next: false_next})
+    return base
+
+def wait_node(node_id, duration_ms):
+    return workflow.create_node(node_id, "wait", {duration: duration_ms})
+
+def set_var_node(node_id, var_name, value_expr):
+    return workflow.create_node(node_id, "set_var", {variable: var_name, value: value_expr})
+
+def with_retry(node, max_retries, delay_ms):
+    return merge(node, {max_retries: max_retries, retry_delay: delay_ms, retry_enabled: true})
+
+def on_error_continue(node):
+    return merge(node, {on_error: "continue"})
+
+def on_error_stop(node):
+    return merge(node, {on_error: "stop"})
+
+# =============================================================================
+# MODULE: Actions
+# =============================================================================
+
+===SOURCE: actions===
+id: "slop-flow/actions@v1"
+uses: {nodes: "slop-flow/nodes@v1"}
+---
+
+def http_get(node_id, url_template, headers):
+    return nodes.action_node(node_id, "http_get", {url: url_template, headers: headers})
+
+def http_post(node_id, url_template, body_template, headers):
+    return nodes.action_node(node_id, "http_post", {url: url_template, body: body_template, headers: headers})
+
+def db_query(node_id, query_template, params):
+    return nodes.action_node(node_id, "db_query", {query: query_template, params: params})
+
+def db_insert(node_id, table, data_template):
+    return nodes.action_node(node_id, "db_insert", {table: table, data: data_template})
+
+def send_email(node_id, to_template, subject_template, body_template):
+    return nodes.action_node(node_id, "send_email", {to: to_template, subject: subject_template, body: body_template})
+
+def send_slack(node_id, channel_template, message_template):
+    return nodes.action_node(node_id, "slack_message", {channel: channel_template, message: message_template})
+
+def log_action(node_id, message_template, level):
+    return nodes.action_node(node_id, "log", {message: message_template, level: level})
+
+def log_info(node_id, message_template):
+    return log_action(node_id, message_template, "info")
+
+def log_error(node_id, message_template):
+    return log_action(node_id, message_template, "error")
+
+# =============================================================================
+# MAIN DEMO
+# =============================================================================
+
+===USE: slop-flow/workflow@v1===
+===USE: slop-flow/triggers@v1===
+===USE: slop-flow/nodes@v1===
+===USE: slop-flow/actions@v1===
+
+===MAIN===
+
+emit("╔════════════════════════════════════════════════════════════════╗\n")
+emit("║                        SLOP FLOW DEMO                          ║\n")
+emit("║            Programmatic Workflow Automation                    ║\n")
+emit("╚════════════════════════════════════════════════════════════════╝\n\n")
+
+# Create a sample workflow
+emit("=== Creating Sample Workflow ===\n\n")
+
+trigger = triggers.manual_trigger("start")
+my_workflow = workflow.create_workflow("order-process", "Order Processing Workflow", trigger)
+
+emit("Created workflow: " + get(my_workflow, "name") + "\n")
+emit("Trigger type: " + get(get(my_workflow, "trigger"), "type") + "\n\n")
+
+# Add nodes
+emit("=== Adding Nodes ===\n\n")
+
+# Node 1: Log start
+node1 = actions.log_info("log-start", "Order received: {{order_id}}")
+node1 = workflow.set_next(node1, "validate")
+my_workflow = workflow.add_node(my_workflow, node1)
+emit("Added: log-start (action)\n")
+
+# Node 2: Validate order
+node2 = nodes.condition_node("validate", {type: "gt", field: "amount", value: 0}, "process", "reject")
+my_workflow = workflow.add_node(my_workflow, node2)
+emit("Added: validate (condition)\n")
+
+# Node 3: Process order
+node3 = actions.db_insert("process", "orders", "{{order_data}}")
+node3 = nodes.with_retry(node3, 3, 1000)
+node3 = workflow.set_next(node3, "notify")
+my_workflow = workflow.add_node(my_workflow, node3)
+emit("Added: process (action with retry)\n")
+
+# Node 4: Reject order
+node4 = actions.log_error("reject", "Order rejected: invalid amount")
+my_workflow = workflow.add_node(my_workflow, node4)
+emit("Added: reject (action)\n")
+
+# Node 5: Send notification
+node5 = actions.send_slack("notify", "#orders", "New order processed: {{order_id}}")
+my_workflow = workflow.add_node(my_workflow, node5)
+emit("Added: notify (action)\n")
+
+emit("\nTotal nodes: " + str(len(get(my_workflow, "nodes"))) + "\n")
+
+# Show workflow structure
+emit("\n=== Workflow Structure ===\n\n")
+for node in get(my_workflow, "nodes") with limit(10):
+    node_id = get(node, "id")
+    node_type = get(node, "type")
+    next_id = get(node, "next_node", "-")
+    emit("  [" + node_id + "] (" + node_type + ") -> " + next_id + "\n")
+
+# Simulate execution
+emit("\n=== Simulating Execution ===\n\n")
+
+order_input = {order_id: "ORD-2024-001", amount: 99.99, customer: "alice@example.com", items: ["Widget A", "Widget B"]}
+emit("Input: " + str(order_input) + "\n\n")
+
+my_workflow = workflow.start_workflow(my_workflow, order_input)
+emit("Status: " + get(my_workflow, "status") + "\n")
+
+# Process through nodes
+emit("\nExecuting nodes:\n")
+execution_steps = ["log-start", "validate", "process", "notify"]
+for step in execution_steps with limit(10):
+    emit("  [OK] " + step + "\n")
+    result = {node_id: step, success: true}
+    my_workflow = workflow.advance_workflow(my_workflow, result)
+
+my_workflow = workflow.complete_workflow(my_workflow)
+
+# Variable substitution demo
+emit("\n=== Variable Substitution ===\n\n")
+
+template = "Order {{order_id}} for {{customer}} - Amount: ${{amount}}"
+filled = workflow.substitute_vars(template, order_input)
+emit("Template: " + template + "\n")
+emit("Result:   " + filled + "\n")
+
+# Summary
+emit("\n=== Workflow Summary ===\n\n")
+summary = workflow.workflow_summary(my_workflow)
+emit(summary: summary)
+
+emit("\n╔════════════════════════════════════════════════════════════════╗\n")
+emit("║                      Demo Complete!                             ║\n")
+emit("╚════════════════════════════════════════════════════════════════╝\n")

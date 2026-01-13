@@ -1,0 +1,185 @@
+# =============================================================================
+# SLOP Flow - Action Library
+# =============================================================================
+# Pre-built actions that can be used in workflow nodes.
+# Actions perform specific operations and return results.
+# =============================================================================
+
+===SOURCE: actions===
+id: "slop-flow/actions@v1"
+uses: {nodes: "slop-flow/nodes@v1"}
+---
+
+# -----------------------------------------------------------------------------
+# HTTP Actions
+# -----------------------------------------------------------------------------
+
+def http_get(node_id, url_template, headers):
+    return nodes.action_node(node_id, "http_get", {url: url_template, headers: headers})
+
+def http_post(node_id, url_template, body_template, headers):
+    return nodes.action_node(node_id, "http_post", {url: url_template, body: body_template, headers: headers})
+
+def http_put(node_id, url_template, body_template, headers):
+    return nodes.action_node(node_id, "http_put", {url: url_template, body: body_template, headers: headers})
+
+def http_delete(node_id, url_template, headers):
+    return nodes.action_node(node_id, "http_delete", {url: url_template, headers: headers})
+
+def http_request(node_id, method, url_template, body_template, headers):
+    return nodes.action_node(node_id, "http_request", {method: method, url: url_template, body: body_template, headers: headers})
+
+# -----------------------------------------------------------------------------
+# Database Actions
+# -----------------------------------------------------------------------------
+
+def db_query(node_id, query_template, params):
+    return nodes.action_node(node_id, "db_query", {query: query_template, params: params})
+
+def db_insert(node_id, table, data_template):
+    return nodes.action_node(node_id, "db_insert", {table: table, data: data_template})
+
+def db_update(node_id, table, data_template, where_template):
+    return nodes.action_node(node_id, "db_update", {table: table, data: data_template, where: where_template})
+
+def db_delete(node_id, table, where_template):
+    return nodes.action_node(node_id, "db_delete", {table: table, where: where_template})
+
+def db_upsert(node_id, table, data_template, conflict_keys):
+    return nodes.action_node(node_id, "db_upsert", {table: table, data: data_template, conflict: conflict_keys})
+
+# -----------------------------------------------------------------------------
+# Email Actions
+# -----------------------------------------------------------------------------
+
+def send_email(node_id, to_template, subject_template, body_template):
+    return nodes.action_node(node_id, "send_email", {to: to_template, subject: subject_template, body: body_template})
+
+def send_email_html(node_id, to_template, subject_template, html_body_template):
+    return nodes.action_node(node_id, "send_email", {to: to_template, subject: subject_template, html: html_body_template})
+
+def send_email_with_attachment(node_id, to_template, subject_template, body_template, attachment_path):
+    return nodes.action_node(node_id, "send_email", {to: to_template, subject: subject_template, body: body_template, attachments: [attachment_path]})
+
+# -----------------------------------------------------------------------------
+# Notification Actions
+# -----------------------------------------------------------------------------
+
+def send_slack(node_id, channel_template, message_template):
+    return nodes.action_node(node_id, "slack_message", {channel: channel_template, message: message_template})
+
+def send_slack_blocks(node_id, channel_template, blocks_template):
+    return nodes.action_node(node_id, "slack_message", {channel: channel_template, blocks: blocks_template})
+
+def send_discord(node_id, webhook_url, message_template):
+    return nodes.action_node(node_id, "discord_message", {webhook: webhook_url, content: message_template})
+
+def send_teams(node_id, webhook_url, message_template):
+    return nodes.action_node(node_id, "teams_message", {webhook: webhook_url, text: message_template})
+
+def send_sms(node_id, to_template, message_template):
+    return nodes.action_node(node_id, "send_sms", {to: to_template, message: message_template})
+
+def push_notification(node_id, title_template, body_template, data):
+    return nodes.action_node(node_id, "push_notification", {title: title_template, body: body_template, data: data})
+
+# -----------------------------------------------------------------------------
+# File Actions
+# -----------------------------------------------------------------------------
+
+def read_file(node_id, path_template):
+    return nodes.action_node(node_id, "read_file", {path: path_template})
+
+def write_file(node_id, path_template, content_template):
+    return nodes.action_node(node_id, "write_file", {path: path_template, content: content_template})
+
+def append_file(node_id, path_template, content_template):
+    return nodes.action_node(node_id, "append_file", {path: path_template, content: content_template})
+
+def delete_file(node_id, path_template):
+    return nodes.action_node(node_id, "delete_file", {path: path_template})
+
+def move_file(node_id, source_template, dest_template):
+    return nodes.action_node(node_id, "move_file", {source: source_template, dest: dest_template})
+
+def copy_file(node_id, source_template, dest_template):
+    return nodes.action_node(node_id, "copy_file", {source: source_template, dest: dest_template})
+
+def list_directory(node_id, path_template, pattern):
+    return nodes.action_node(node_id, "list_directory", {path: path_template, pattern: pattern})
+
+# -----------------------------------------------------------------------------
+# Cloud Storage Actions
+# -----------------------------------------------------------------------------
+
+def s3_get(node_id, bucket, key_template):
+    return nodes.action_node(node_id, "s3_get", {bucket: bucket, key: key_template})
+
+def s3_put(node_id, bucket, key_template, content_template):
+    return nodes.action_node(node_id, "s3_put", {bucket: bucket, key: key_template, content: content_template})
+
+def s3_delete(node_id, bucket, key_template):
+    return nodes.action_node(node_id, "s3_delete", {bucket: bucket, key: key_template})
+
+def s3_list(node_id, bucket, prefix_template):
+    return nodes.action_node(node_id, "s3_list", {bucket: bucket, prefix: prefix_template})
+
+# -----------------------------------------------------------------------------
+# AI/ML Actions
+# -----------------------------------------------------------------------------
+
+def llm_completion(node_id, model, prompt_template, params):
+    return nodes.action_node(node_id, "llm_completion", {model: model, prompt: prompt_template, params: params})
+
+def llm_chat(node_id, model, messages_template, params):
+    return nodes.action_node(node_id, "llm_chat", {model: model, messages: messages_template, params: params})
+
+def text_embedding(node_id, model, text_template):
+    return nodes.action_node(node_id, "text_embedding", {model: model, text: text_template})
+
+def image_generate(node_id, model, prompt_template, params):
+    return nodes.action_node(node_id, "image_generate", {model: model, prompt: prompt_template, params: params})
+
+# -----------------------------------------------------------------------------
+# Data Format Actions
+# -----------------------------------------------------------------------------
+
+def json_parse(node_id, json_string_field):
+    return nodes.action_node(node_id, "json_parse", {field: json_string_field})
+
+def json_stringify(node_id, data_field):
+    return nodes.action_node(node_id, "json_stringify", {field: data_field})
+
+def csv_parse(node_id, csv_string_field, has_header):
+    return nodes.action_node(node_id, "csv_parse", {field: csv_string_field, header: has_header})
+
+def csv_stringify(node_id, data_field, columns):
+    return nodes.action_node(node_id, "csv_stringify", {field: data_field, columns: columns})
+
+def xml_parse(node_id, xml_string_field):
+    return nodes.action_node(node_id, "xml_parse", {field: xml_string_field})
+
+# -----------------------------------------------------------------------------
+# Utility Actions
+# -----------------------------------------------------------------------------
+
+def log_action(node_id, message_template, level):
+    return nodes.action_node(node_id, "log", {message: message_template, level: level})
+
+def log_info(node_id, message_template):
+    return log_action(node_id, message_template, "info")
+
+def log_error(node_id, message_template):
+    return log_action(node_id, message_template, "error")
+
+def log_debug(node_id, message_template):
+    return log_action(node_id, message_template, "debug")
+
+def delay_action(node_id, delay_ms):
+    return nodes.wait_node(node_id, delay_ms)
+
+def run_script(node_id, script_path, args):
+    return nodes.action_node(node_id, "run_script", {script: script_path, args: args})
+
+def execute_workflow(node_id, workflow_id, input_data_template):
+    return nodes.action_node(node_id, "execute_workflow", {workflow: workflow_id, input: input_data_template})

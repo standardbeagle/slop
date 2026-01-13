@@ -1,32 +1,512 @@
-===SOURCE: math===
-id: "lib/math@v1"
+# =============================================================================
+# SLOP Module System and Code Organization Showcase
+# =============================================================================
+# This example demonstrates the SLOP module system, including:
+# - Module definition with ===SOURCE=== blocks
+# - Module dependencies with 'uses'
+# - Module composition and reuse
+# - Comprehensive utility libraries
+# =============================================================================
+
+# =============================================================================
+# MODULE 1: Core Utilities (utils)
+# =============================================================================
+# Fundamental utility functions for working with data structures
+
+===SOURCE: utils===
+id: "lib/utils@v1"
 uses: {}
 ---
-def add(a, b):
-    return a + b
 
-def multiply(a, b):
-    return a * b
+# Get a value from a map with a default if missing
+def safe_get(obj, key, default_val):
+    if has_key(obj, key):
+        return get(obj, key)
+    return default_val
 
-def square(n):
-    return multiply(n, n)
+# Return first non-empty value from a list
+def coalesce(vals):
+    for v in vals with limit(100):
+        # Check for non-empty values (not empty string or empty list)
+        if is_string(v):
+            if len(v) > 0:
+                return v
+        elif is_list(v):
+            if len(v) > 0:
+                return v
+        else:
+            return v
+    return first(vals)
+
+# Apply default values to a map
+def defaults(obj, default_obj):
+    result = copy(default_obj)
+    for pair in items(obj) with limit(100):
+        key = first(pair)
+        val = last(pair)
+        result = merge(result, {key: val})
+    return result
+
+# Check if a value is empty (none, empty string, or empty list)
+def is_empty(val):
+    if is_none(val):
+        return true
+    if is_string(val):
+        return len(val) == 0
+    if is_list(val):
+        return len(val) == 0
+    if is_map(val):
+        return len(keys(val)) == 0
+    return false
+
+# Clamp a value between min and max
+def clamp_value(val, min_val, max_val):
+    if val < min_val:
+        return min_val
+    if val > max_val:
+        return max_val
+    return val
+
+# =============================================================================
+# MODULE 2: String Helpers (strings)
+# =============================================================================
+# String manipulation and formatting utilities
+
+===SOURCE: strings===
+id: "lib/strings@v1"
+uses: {}
+---
+
+# Convert a string to a URL-friendly slug
+def slugify(text):
+    # Convert to lowercase
+    result = lower(text)
+    # Replace spaces with hyphens
+    result = replace(result, " ", "-")
+    # Remove common special characters
+    result = replace(result, "'", "")
+    result = replace(result, ".", "")
+    result = replace(result, ",", "")
+    result = replace(result, "!", "")
+    result = replace(result, "?", "")
+    return result
+
+# Truncate a string with ellipsis
+def truncate(text, max_len):
+    if len(text) <= max_len:
+        return text
+    return slice(text, 0, max_len - 3) + "..."
+
+# Simple template replacement: replace {key} with values from map
+def render_template(tmpl, vals):
+    result = tmpl
+    for pair in items(vals) with limit(50):
+        key = first(pair)
+        val = last(pair)
+        placeholder = "{" + str(key) + "}"
+        result = replace(result, placeholder, str(val))
+    return result
+
+# Pad a string to a specific length
+def pad_string(text, length, char, direction):
+    current_len = len(text)
+    if current_len >= length:
+        return text
+    padding = repeat(char, length - current_len)
+    if direction == "left":
+        return padding + text
+    return text + padding
+
+# Capitalize each word in a string
+def title_case(text):
+    return title(text)
+
+# Count occurrences of a substring
+def count_substr(text, sub):
+    return count(text, sub)
+
+# Check if string contains only digits
+def is_numeric_string(text):
+    return isdigit(text)
+
+# =============================================================================
+# MODULE 3: Math Utilities (mathutils)
+# =============================================================================
+# Extended mathematical operations beyond basic arithmetic
+
+===SOURCE: mathutils===
+id: "lib/mathutils@v1"
+uses: {}
+---
+
+# Linear interpolation between two values
+def lerp(start_val, end_val, t):
+    return start_val + (end_val - start_val) * t
+
+# Normalize a value from one range to another
+def normalize(val, in_min, in_max, out_min, out_max):
+    # First normalize to 0-1
+    normalized = (val - in_min) / (in_max - in_min)
+    # Then scale to output range
+    return out_min + normalized * (out_max - out_min)
+
+# Calculate distance between two points
+def distance_2d(x1, y1, x2, y2):
+    dx = x2 - x1
+    dy = y2 - y1
+    return sqrt(dx * dx + dy * dy)
+
+# Calculate factorial
+def factorial(n):
+    if n <= 1:
+        return 1
+    result = 1
+    for i in range(2, n + 1) with limit(100):
+        result = result * i
+    return result
+
+# Check if a number is prime
+def is_prime(n):
+    if n < 2:
+        return false
+    if n == 2:
+        return true
+    if n % 2 == 0:
+        return false
+    i = 3
+    for _ in range(int(sqrt(n)) + 1) with limit(1000):
+        if i * i > n:
+            break
+        if n % i == 0:
+            return false
+        i = i + 2
+    return true
+
+# Greatest common divisor (Euclidean algorithm)
+def gcd(a, b):
+    for _ in range(100) with limit(100):
+        if b == 0:
+            return a
+        temp = b
+        b = a % b
+        a = temp
+    return a
+
+# Least common multiple
+def lcm(a, b):
+    return abs(a * b) / gcd(a, b)
+
+# =============================================================================
+# MODULE 4: Statistics (stats)
+# =============================================================================
+# Statistical analysis functions
+
+===SOURCE: stats===
+id: "lib/stats@v1"
+uses: {}
+---
+
+# Calculate the mean (average)
+def mean(nums):
+    return sum(nums) / len(nums)
+
+# Calculate the median
+def median(nums):
+    sorted_nums = sorted(nums)
+    n = len(sorted_nums)
+    mid = int(n / 2)
+    if n % 2 == 0:
+        # Even number of elements: average of two middle values
+        return (nth(sorted_nums, mid - 1) + nth(sorted_nums, mid)) / 2
+    # Odd number of elements: return middle value
+    return nth(sorted_nums, mid)
+
+# Calculate the mode (most frequent value) - simplified version
+def mode(nums):
+    # For simplicity, count using a list-based approach
+    max_count = 0
+    mode_val = first(nums)
+    for candidate in unique(nums) with limit(100):
+        candidate_count = 0
+        for num in nums with limit(1000):
+            if num == candidate:
+                candidate_count = candidate_count + 1
+        if candidate_count > max_count:
+            max_count = candidate_count
+            mode_val = candidate
+    return mode_val
+
+# Calculate the range
+def range_val(nums):
+    return max(nums) - min(nums)
+
+# Calculate variance
+def variance(nums):
+    m = mean(nums)
+    sq_diffs = map(nums, (x) -> (x - m) * (x - m))
+    return sum(sq_diffs) / len(nums)
+
+# Calculate standard deviation
+def std_dev(nums):
+    return sqrt(variance(nums))
+
+# Calculate percentile
+def percentile(nums, p):
+    sorted_nums = sorted(nums)
+    n = len(sorted_nums)
+    idx = (p / 100) * (n - 1)
+    lower_idx = int(floor(idx))
+    upper_idx = int(ceil(idx))
+    if lower_idx == upper_idx:
+        return nth(sorted_nums, lower_idx)
+    # Linear interpolation
+    fraction = idx - lower_idx
+    lower_val = nth(sorted_nums, lower_idx)
+    upper_val = nth(sorted_nums, upper_idx)
+    return lower_val + fraction * (upper_val - lower_val)
+
+# =============================================================================
+# MODULE 5: Validation (validation)
+# =============================================================================
+# Data validation utilities
+
+===SOURCE: validation===
+id: "lib/validation@v1"
+uses: {}
+---
+
+# Validate email format (simple check)
+def is_valid_email(email):
+    if not contains(email, "@"):
+        return false
+    if not contains(email, "."):
+        return false
+    parts = split(email, "@")
+    if len(parts) != 2:
+        return false
+    local = first(parts)
+    domain = last(parts)
+    if len(local) == 0:
+        return false
+    if len(domain) < 3:
+        return false
+    return true
+
+# Validate URL format (simple check)
+def is_valid_url(url):
+    if startswith(url, "http://"):
+        return true
+    if startswith(url, "https://"):
+        return true
+    return false
+
+# Validate phone number (10 digits, optionally with separators)
+def is_valid_phone(phone):
+    # Remove common separators
+    clean = replace(phone, "-", "")
+    clean = replace(clean, " ", "")
+    clean = replace(clean, "(", "")
+    clean = replace(clean, ")", "")
+    clean = replace(clean, ".", "")
+    # Check if result is 10 or 11 digits
+    if not isdigit(clean):
+        return false
+    n = len(clean)
+    return n == 10 or n == 11
+
+# Validate that a value is in a range
+def is_in_range(val, min_val, max_val):
+    return val >= min_val and val <= max_val
+
+# Validate that a string has minimum length
+def has_min_length(text, min_len):
+    return len(text) >= min_len
+
+# Validate that a string has maximum length
+def has_max_length(text, max_len):
+    return len(text) <= max_len
+
+# Validate that a value is one of allowed options
+def is_one_of(val, allowed):
+    for a in allowed with limit(100):
+        if val == a:
+            return true
+    return false
+
+# =============================================================================
+# MODULE 6: Calculator (uses math)
+# =============================================================================
+# Higher-level calculations using math module
 
 ===SOURCE: calculator===
 id: "lib/calculator@v1"
-uses: {math: "lib/math@v1"}
+uses: {mathutils: "lib/mathutils@v1"}
 ---
+
 def sum_of_squares(a, b):
-    sq_a = math.square(a)
-    sq_b = math.square(b)
-    return math.add(sq_a, sq_b)
+    return a * a + b * b
 
-def distance(x1, y1, x2, y2):
-    dx = math.add(x2, math.multiply(x1, -1))
-    dy = math.add(y2, math.multiply(y1, -1))
-    return sum_of_squares(dx, dy)
+def hypotenuse(a, b):
+    return sqrt(sum_of_squares(a, b))
 
+def point_distance(p1, p2):
+    x1 = get(p1, "x")
+    y1 = get(p1, "y")
+    x2 = get(p2, "x")
+    y2 = get(p2, "y")
+    return mathutils.distance_2d(x1, y1, x2, y2)
+
+def interpolate_point(p1, p2, t):
+    x1 = get(p1, "x")
+    y1 = get(p1, "y")
+    x2 = get(p2, "x")
+    y2 = get(p2, "y")
+    new_x = mathutils.lerp(x1, x2, t)
+    new_y = mathutils.lerp(y1, y2, t)
+    return {x: new_x, y: new_y}
+
+# =============================================================================
+# MODULE 7: Formatter (uses strings and validation)
+# =============================================================================
+# Data formatting utilities
+
+===SOURCE: formatter===
+id: "lib/formatter@v1"
+uses: {strings: "lib/strings@v1", validation: "lib/validation@v1"}
+---
+
+def format_display_name(first_name, last_name):
+    return strings.title_case(first_name) + " " + strings.title_case(last_name)
+
+def format_slug(title):
+    return strings.slugify(title)
+
+def format_preview(content, max_length):
+    return strings.truncate(content, max_length)
+
+def format_contact(contact):
+    name = get(contact, "name")
+    email = get(contact, "email")
+    phone = get(contact, "phone")
+
+    result = name
+
+    if validation.is_valid_email(email):
+        result = result + " <" + email + ">"
+
+    if validation.is_valid_phone(phone):
+        result = result + " | " + phone
+
+    return result
+
+# =============================================================================
+# MAIN PROGRAM - Demonstrate all modules
+# =============================================================================
+
+===USE: lib/utils@v1===
+===USE: lib/strings@v1===
+===USE: lib/mathutils@v1===
+===USE: lib/stats@v1===
+===USE: lib/validation@v1===
 ===USE: lib/calculator@v1===
+===USE: lib/formatter@v1===
 
 ===MAIN===
-result = calculator.sum_of_squares(3, 4)
-emit(result)
+
+emit("=== SLOP Module System Demo ===")
+
+# Demo 1: Utils module
+emit("--- Utils Module ---")
+config = {debug: true}
+defaults_config = {debug: false, max_wait: 30, retries: 3}
+merged_config = utils.defaults(config, defaults_config)
+emit(merged_config: merged_config)
+
+test_val = utils.safe_get({name: "test"}, "missing", "default")
+emit(safe_get_result: test_val)
+
+# Note: Using empty string as falsy value since none literal can shadow functions
+first_non_empty = utils.coalesce(["", "", "found", "also"])
+emit(coalesce_result: first_non_empty)
+
+emit(is_empty_string: utils.is_empty(""))
+emit(is_empty_list: utils.is_empty([]))
+emit(is_empty_value: utils.is_empty("not empty"))
+
+emit(clamped_low: utils.clamp_value(-5, 0, 100))
+emit(clamped_high: utils.clamp_value(150, 0, 100))
+emit(clamped_ok: utils.clamp_value(50, 0, 100))
+
+# Demo 2: Strings module
+emit("--- Strings Module ---")
+emit(slugified: strings.slugify("Hello World! How are you?"))
+emit(truncated: strings.truncate("This is a very long string that needs to be shortened", 20))
+
+template = "Hello {name}, you have {count} messages"
+rendered = strings.render_template(template, {name: "Alice", count: 5})
+emit(rendered_template: rendered)
+
+emit(padded_left: strings.pad_string("42", 5, "0", "left"))
+emit(padded_right: strings.pad_string("test", 10, ".", "right"))
+emit(title_cased: strings.title_case("hello world"))
+
+# Demo 3: Math module
+emit("--- Math Module ---")
+emit(lerp_50_percent: mathutils.lerp(0, 100, 0.5))
+emit(normalized: mathutils.normalize(50, 0, 100, 0, 1))
+emit(distance: mathutils.distance_2d(0, 0, 3, 4))
+emit(factorial_5: mathutils.factorial(5))
+emit(is_7_prime: mathutils.is_prime(7))
+emit(is_9_prime: mathutils.is_prime(9))
+emit(gcd_48_18: mathutils.gcd(48, 18))
+emit(lcm_4_6: mathutils.lcm(4, 6))
+
+# Demo 4: Stats module
+emit("--- Stats Module ---")
+data = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+emit(mean: stats.mean(data))
+emit(median: stats.median(data))
+emit(data_range: stats.range_val(data))
+emit(variance: stats.variance(data))
+emit(std_dev: stats.std_dev(data))
+emit(percentile_25: stats.percentile(data, 25))
+emit(percentile_75: stats.percentile(data, 75))
+
+mode_data = [1, 2, 2, 3, 3, 3, 4, 4]
+emit(mode: stats.mode(mode_data))
+
+# Demo 5: Validation module
+emit("--- Validation Module ---")
+emit(valid_email: validation.is_valid_email("test@example.com"))
+emit(invalid_email: validation.is_valid_email("not-an-email"))
+emit(valid_url: validation.is_valid_url("https://example.com"))
+emit(invalid_url: validation.is_valid_url("not-a-url"))
+emit(valid_phone: validation.is_valid_phone("555-123-4567"))
+emit(invalid_phone: validation.is_valid_phone("12345"))
+emit(in_range: validation.is_in_range(50, 0, 100))
+emit(min_length: validation.has_min_length("hello", 3))
+emit(one_of: validation.is_one_of("b", ["a", "b", "c"]))
+
+# Demo 6: Calculator module (uses mathutils)
+emit("--- Calculator Module ---")
+emit(sum_of_squares: calculator.sum_of_squares(3, 4))
+emit(hypotenuse: calculator.hypotenuse(3, 4))
+
+p1 = {x: 0, y: 0}
+p2 = {x: 10, y: 10}
+emit(point_distance: calculator.point_distance(p1, p2))
+
+mid_point = calculator.interpolate_point(p1, p2, 0.5)
+emit(midpoint: mid_point)
+
+# Demo 7: Formatter module (uses strings and validation)
+emit("--- Formatter Module ---")
+emit(display_name: formatter.format_display_name("john", "doe"))
+emit(article_slug: formatter.format_slug("My First Blog Post!"))
+emit(preview: formatter.format_preview("This is a long article with lots of content...", 25))
+
+contact = {name: "Jane Smith", email: "jane@example.com", phone: "555-987-6543"}
+emit(formatted_contact: formatter.format_contact(contact))
+
+emit("=== Module Demo Complete! ===")

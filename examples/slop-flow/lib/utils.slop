@@ -1,0 +1,213 @@
+# =============================================================================
+# SLOP Flow - Utility Functions
+# =============================================================================
+# Helper functions for common workflow operations.
+# =============================================================================
+
+===SOURCE: utils===
+id: "slop-flow/utils@v1"
+uses: {}
+---
+
+# -----------------------------------------------------------------------------
+# Template Helpers
+# -----------------------------------------------------------------------------
+
+def template(template_str, vars):
+    result = template_str
+    for pair in items(vars) with limit(100):
+        key = first(pair)
+        val = last(pair)
+        placeholder = "{{" + str(key) + "}}"
+        result = replace(result, placeholder, str(val))
+    return result
+
+def json_path(obj, path):
+    parts = split(path, ".")
+    current = obj
+    for part in parts with limit(20):
+        if is_map(current) and has_key(current, part):
+            current = get(current, part)
+        elif is_list(current) and isdigit(part):
+            current = nth(current, int(part))
+        else:
+            return ""
+    return current
+
+# -----------------------------------------------------------------------------
+# Data Validation
+# -----------------------------------------------------------------------------
+
+def validate_required(data, required_fields):
+    missing = []
+    for field in required_fields with limit(50):
+        if not has_key(data, field):
+            missing = missing + [field]
+        elif is_empty(get(data, field)):
+            missing = missing + [field]
+    return {valid: len(missing) == 0, missing: missing}
+
+def validate_email(email):
+    if not contains(email, "@"):
+        return false
+    if not contains(email, "."):
+        return false
+    parts = split(email, "@")
+    if len(parts) != 2:
+        return false
+    return true
+
+def validate_url(url):
+    if startswith(url, "http://"):
+        return true
+    if startswith(url, "https://"):
+        return true
+    return false
+
+def is_empty(val):
+    if is_string(val):
+        return len(trim(val)) == 0
+    if is_list(val):
+        return len(val) == 0
+    if is_map(val):
+        return len(keys(val)) == 0
+    return false
+
+# -----------------------------------------------------------------------------
+# String Helpers
+# -----------------------------------------------------------------------------
+
+def slugify(text):
+    result = lower(text)
+    result = replace(result, " ", "-")
+    result = replace(result, "_", "-")
+    return result
+
+def truncate(text, max_len):
+    if len(text) <= max_len:
+        return text
+    return slice(text, 0, max_len - 3) + "..."
+
+def capitalize_first(text):
+    if len(text) == 0:
+        return text
+    return upper(slice(text, 0, 1)) + slice(text, 1, len(text))
+
+def snake_to_camel(text):
+    parts = split(text, "_")
+    result = first(parts)
+    rest = slice(parts, 1, len(parts))
+    for part in rest with limit(20):
+        result = result + capitalize_first(part)
+    return result
+
+# -----------------------------------------------------------------------------
+# Date/Time Helpers
+# -----------------------------------------------------------------------------
+
+def format_date(timestamp, fmt):
+    return time_format(timestamp, fmt)
+
+def date_iso(timestamp):
+    return time_format(timestamp, "2006-01-02T15:04:05Z")
+
+def date_human(timestamp):
+    return time_format(timestamp, "January 2, 2006")
+
+def days_between(start_time, end_time):
+    diff = time_diff(end_time, start_time)
+    return int(diff / (24 * 60 * 60 * 1000))
+
+def is_business_day(timestamp):
+    day = time_format(timestamp, "Monday")
+    if day == "Saturday":
+        return false
+    if day == "Sunday":
+        return false
+    return true
+
+# -----------------------------------------------------------------------------
+# Collection Helpers
+# -----------------------------------------------------------------------------
+
+def safe_get(obj, key, default_val):
+    if has_key(obj, key):
+        return get(obj, key)
+    return default_val
+
+def pick(obj, key_list):
+    result = {}
+    for k in key_list with limit(50):
+        if has_key(obj, k):
+            result = merge(result, {k: get(obj, k)})
+    return result
+
+def omit(obj, key_list):
+    result = {}
+    for pair in items(obj) with limit(100):
+        k = first(pair)
+        v = last(pair)
+        should_include = true
+        for omit_key in key_list with limit(50):
+            if k == omit_key:
+                should_include = false
+        if should_include:
+            result = merge(result, {k: v})
+    return result
+
+def group_by_key(list_items, key_name):
+    result = {}
+    for item in list_items with limit(1000):
+        key_val = str(get(item, key_name, "unknown"))
+        existing = safe_get(result, key_val, [])
+        result = merge(result, {key_val: existing + [item]})
+    return result
+
+def deduplicate(list_items, key_name):
+    seen = []
+    result = []
+    for item in list_items with limit(1000):
+        key_val = get(item, key_name)
+        is_seen = false
+        for s in seen with limit(1000):
+            if s == key_val:
+                is_seen = true
+        if not is_seen:
+            seen = seen + [key_val]
+            result = result + [item]
+    return result
+
+# -----------------------------------------------------------------------------
+# Error Handling
+# -----------------------------------------------------------------------------
+
+def create_error(code, message, details):
+    return {error: true, code: code, message: message, details: details, timestamp: now()}
+
+def is_error(result):
+    return has_key(result, "error") and get(result, "error") == true
+
+def wrap_result(data):
+    return {success: true, data: data, timestamp: now()}
+
+def unwrap_result(result):
+    if is_error(result):
+        return {}
+    return safe_get(result, "data", {})
+
+# -----------------------------------------------------------------------------
+# Retry Helpers
+# -----------------------------------------------------------------------------
+
+def exponential_backoff(attempt, base_delay_ms, max_delay_ms):
+    delay = base_delay_ms * pow(2, attempt)
+    if delay > max_delay_ms:
+        return max_delay_ms
+    return delay
+
+def should_retry(error, retryable_codes):
+    error_code = safe_get(error, "code", "")
+    for code in retryable_codes with limit(20):
+        if error_code == code:
+            return true
+    return false

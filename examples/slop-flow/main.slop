@@ -1,0 +1,146 @@
+# =============================================================================
+# SLOP Flow - Main Entry Point
+# =============================================================================
+# SLOP Flow is an N8N-style workflow automation platform that uses
+# programmatic SLOP definitions instead of visual graphs.
+#
+# Key Features:
+# - Programmatic workflow definitions
+# - Node-based execution with conditions and retry logic
+# - Multiple trigger types (manual, schedule, webhook, event, etc.)
+# - Rich set of integration connectors
+# - Variable substitution and templating
+#
+# Project Structure:
+# lib/
+#   workflow.slop   - Core workflow engine
+#   nodes.slop      - Node type definitions
+#   triggers.slop   - Trigger implementations
+#   actions.slop    - Action library
+#   connectors.slop - Third-party integrations
+#   utils.slop      - Helper utilities
+# workflows/
+#   hello-workflow.slop      - Getting started example
+#   data-pipeline.slop       - ETL-style processing
+#   notification-chain.slop  - Multi-channel alerting
+#   api-integration.slop     - External API orchestration
+# =============================================================================
+
+===USE: slop-flow/workflow@v1===
+===USE: slop-flow/nodes@v1===
+===USE: slop-flow/triggers@v1===
+===USE: slop-flow/actions@v1===
+===USE: slop-flow/utils@v1===
+
+===MAIN===
+
+emit("╔════════════════════════════════════════════════════════════════╗\n")
+emit("║                        SLOP FLOW                               ║\n")
+emit("║            Programmatic Workflow Automation                    ║\n")
+emit("╚════════════════════════════════════════════════════════════════╝\n\n")
+
+emit("SLOP Flow enables N8N-style workflow automation using code.\n\n")
+
+# Demonstrate core concepts
+emit("=== Core Concepts ===\n\n")
+
+# 1. Triggers
+emit("1. TRIGGERS - What starts your workflow\n")
+emit("   - Manual: triggers.manual_trigger('start')\n")
+emit("   - Schedule: triggers.every_day_at('daily', 9, 0)\n")
+emit("   - Webhook: triggers.webhook_trigger('hook', '/api/webhook')\n")
+emit("   - Event: triggers.event_trigger('event', 'order.created')\n\n")
+
+# 2. Nodes
+emit("2. NODES - Building blocks of workflows\n")
+emit("   - Action: Perform operations (HTTP, DB, Email)\n")
+emit("   - Transform: Process data (map, filter, aggregate)\n")
+emit("   - Condition: Branch based on data\n")
+emit("   - Loop: Iterate over lists\n")
+emit("   - Wait: Pause execution\n\n")
+
+# 3. Actions
+emit("3. ACTIONS - Pre-built operations\n")
+emit("   - HTTP: actions.http_get(), http_post()\n")
+emit("   - Database: actions.db_query(), db_insert()\n")
+emit("   - Notifications: actions.send_email(), send_slack()\n")
+emit("   - Files: actions.read_file(), write_file()\n\n")
+
+# 4. Connectors
+emit("4. CONNECTORS - Third-party integrations\n")
+emit("   - Slack, GitHub, Jira, Notion\n")
+emit("   - Stripe, Twilio, SendGrid\n")
+emit("   - PostgreSQL, Redis, S3\n\n")
+
+# Quick example
+emit("=== Quick Example ===\n\n")
+
+# Create a simple workflow
+trigger = triggers.manual_trigger("demo-start")
+demo_wf = workflow.create_workflow("demo", "Demo Workflow", trigger)
+
+# Add nodes
+fetch = actions.http_get("fetch-data", "{{api_url}}/users", {})
+fetch = nodes.set_next(fetch, "process")
+demo_wf = workflow.add_node(demo_wf, fetch)
+
+process = nodes.map_transform("process", "users", "format_user")
+process = nodes.set_next(process, "notify")
+demo_wf = workflow.add_node(demo_wf, process)
+
+notify = actions.send_slack("notify", "#general", "Processed {{user_count}} users")
+demo_wf = workflow.add_node(demo_wf, notify)
+
+emit("Workflow: " + get(demo_wf, "name") + "\n")
+emit("Nodes: " + str(len(get(demo_wf, "nodes"))) + "\n\n")
+
+emit("```slop\n")
+emit("# Create workflow with trigger\n")
+emit("trigger = triggers.manual_trigger('start')\n")
+emit("wf = workflow.create_workflow('my-workflow', 'My Workflow', trigger)\n\n")
+emit("# Add action node\n")
+emit("fetch = actions.http_get('fetch', '{{url}}', {})\n")
+emit("wf = workflow.add_node(wf, fetch)\n\n")
+emit("# Add condition node\n")
+emit("check = nodes.condition_node('check', equals('status', 'ok'), 'success', 'error')\n")
+emit("wf = workflow.add_node(wf, check)\n\n")
+emit("# Run workflow\n")
+emit("wf = workflow.start_workflow(wf, {url: 'https://api.example.com'})\n")
+emit("```\n\n")
+
+# Variable substitution demo
+emit("=== Variable Substitution ===\n\n")
+
+template_str = "Hello {{name}}, your order #{{order_id}} is {{status}}!"
+vars = {name: "Alice", order_id: "12345", status: "shipped"}
+result = workflow.substitute_vars(template_str, vars)
+emit("Template: " + template_str + "\n")
+emit("Variables: " + str(vars) + "\n")
+emit("Result: " + result + "\n\n")
+
+# Utility functions demo
+emit("=== Utilities ===\n\n")
+
+# Validation
+data = {name: "John", email: "john@example.com"}
+required = ["name", "email", "phone"]
+validation = utils.validate_required(data, required)
+emit("Validation: " + str(validation) + "\n")
+
+# Email validation
+emit("Email valid: " + str(utils.validate_email("test@example.com")) + "\n")
+emit("Email invalid: " + str(utils.validate_email("not-an-email")) + "\n\n")
+
+# Available workflows
+emit("=== Available Example Workflows ===\n\n")
+emit("1. hello-workflow.slop    - Basic getting started example\n")
+emit("2. data-pipeline.slop     - ETL-style data processing\n")
+emit("3. notification-chain.slop - Multi-channel alerting\n")
+emit("4. api-integration.slop   - External API orchestration\n\n")
+
+emit("Run examples with:\n")
+emit("  slop run examples/slop-flow/workflows/hello-workflow.slop\n\n")
+
+emit("╔════════════════════════════════════════════════════════════════╗\n")
+emit("║                    SLOP Flow Ready!                            ║\n")
+emit("╚════════════════════════════════════════════════════════════════╝\n")

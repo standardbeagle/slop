@@ -1,0 +1,72 @@
+# =============================================================================
+# Hello Workflow - Simple Getting Started Example
+# =============================================================================
+# A basic workflow that demonstrates core SLOP Flow concepts.
+# =============================================================================
+
+===USE: slop-flow/workflow@v1===
+===USE: slop-flow/nodes@v1===
+===USE: slop-flow/triggers@v1===
+===USE: slop-flow/actions@v1===
+
+===MAIN===
+
+emit("=== Hello Workflow Demo ===\n")
+
+# Create a simple workflow with manual trigger
+trigger = triggers.manual_trigger("start")
+
+wf = workflow.create_workflow("hello-workflow", "Hello World Workflow", trigger)
+
+# Add a simple logging node
+log_node = actions.log_info("log-start", "Workflow started with input: {{input}}")
+wf = workflow.add_node(wf, log_node)
+
+# Add a transform node that processes the input
+transform = nodes.transform_node("process-input", "extract", {fields: ["name", "message"]})
+transform = nodes.set_next(transform, "log-result")
+wf = workflow.add_node(wf, transform)
+
+# Add a final log node
+final_log = actions.log_info("log-result", "Processed: {{name}} says {{message}}")
+wf = workflow.add_node(wf, final_log)
+
+emit("Created workflow: " + get(wf, "name") + "\n")
+emit("Node count: " + str(len(get(wf, "nodes"))) + "\n")
+
+# Simulate running the workflow
+input_data = {name: "Alice", message: "Hello SLOP Flow!"}
+emit("\nStarting workflow with input: " + str(input_data) + "\n")
+
+wf = workflow.start_workflow(wf, input_data)
+emit("Status: " + get(wf, "status") + "\n")
+
+# Show context
+ctx = get(wf, "context")
+emit("Input stored: " + str(get(ctx, "input")) + "\n")
+
+# Get current node
+current = workflow.get_current_node(wf)
+emit("Current node: " + get(current, "id") + " (type: " + get(current, "type") + ")\n")
+
+# Simulate advancing through nodes
+emit("\n--- Simulating Node Execution ---\n")
+
+nodes_list = get(wf, "nodes")
+for node in nodes_list with limit(10):
+    node_id = get(node, "id")
+    node_type = get(node, "type")
+    emit("Executing node: " + node_id + " (" + node_type + ")\n")
+
+    # Simulate result
+    result = {node_id: node_id, success: true, output: "Completed"}
+    wf = workflow.advance_workflow(wf, result)
+
+# Complete the workflow
+wf = workflow.complete_workflow(wf)
+emit("\nFinal status: " + get(wf, "status") + "\n")
+
+# Show summary
+summary = workflow.workflow_summary(wf)
+emit("\n=== Workflow Summary ===\n")
+emit(summary: summary)

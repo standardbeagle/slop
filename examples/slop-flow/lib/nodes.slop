@@ -1,0 +1,157 @@
+# =============================================================================
+# SLOP Flow - Node Types
+# =============================================================================
+# Defines various node types that can be used in workflows.
+# Each node type has specific behavior and configuration options.
+# =============================================================================
+
+===SOURCE: nodes===
+id: "slop-flow/nodes@v1"
+uses: {workflow: "slop-flow/workflow@v1"}
+---
+
+# -----------------------------------------------------------------------------
+# Action Node
+# -----------------------------------------------------------------------------
+# Executes an action and passes result to next node
+
+def action_node(node_id, action_name, params):
+    base = workflow.create_node(node_id, "action", {action: action_name, params: params})
+    return base
+
+# -----------------------------------------------------------------------------
+# Transform Node
+# -----------------------------------------------------------------------------
+# Transforms data using a specified function
+
+def transform_node(node_id, transform_type, config):
+    return workflow.create_node(node_id, "transform", {transform: transform_type, config: config})
+
+# Map transform - apply function to each item
+def map_transform(node_id, field, expression):
+    return transform_node(node_id, "map", {field: field, expression: expression})
+
+# Filter transform - keep items matching condition
+def filter_transform(node_id, field, condition):
+    return transform_node(node_id, "filter", {field: field, condition: condition})
+
+# Extract transform - extract specific fields
+def extract_transform(node_id, fields):
+    return transform_node(node_id, "extract", {fields: fields})
+
+# Aggregate transform - sum, count, avg, etc.
+def aggregate_transform(node_id, operation, field):
+    return transform_node(node_id, "aggregate", {operation: operation, field: field})
+
+# -----------------------------------------------------------------------------
+# Condition Node (Branch)
+# -----------------------------------------------------------------------------
+# Evaluates a condition and routes to different next nodes
+
+def condition_node(node_id, condition_expr, true_next, false_next):
+    base = workflow.create_node(node_id, "condition", {condition: condition_expr, true_next: true_next, false_next: false_next})
+    return base
+
+# Comparison helpers
+def equals_condition(field, value):
+    return {type: "equals", field: field, value: value}
+
+def greater_than_condition(field, value):
+    return {type: "gt", field: field, value: value}
+
+def less_than_condition(field, value):
+    return {type: "lt", field: field, value: value}
+
+def contains_condition(field, value):
+    return {type: "contains", field: field, value: value}
+
+def regex_condition(field, pattern):
+    return {type: "regex", field: field, pattern: pattern}
+
+# -----------------------------------------------------------------------------
+# Switch Node (Multi-Branch)
+# -----------------------------------------------------------------------------
+# Routes to different nodes based on a value
+
+def switch_node(node_id, switch_field, cases, default_next):
+    return workflow.create_node(node_id, "switch", {field: switch_field, cases: cases, default: default_next})
+
+# -----------------------------------------------------------------------------
+# Loop Node
+# -----------------------------------------------------------------------------
+# Iterates over a list, executing a sub-workflow for each item
+
+def loop_node(node_id, list_field, loop_body_node, max_iterations):
+    return workflow.create_node(node_id, "loop", {list_field: list_field, body: loop_body_node, max_iterations: max_iterations})
+
+# -----------------------------------------------------------------------------
+# Parallel Node
+# -----------------------------------------------------------------------------
+# Executes multiple branches in parallel
+
+def parallel_node(node_id, branches, merge_strategy):
+    return workflow.create_node(node_id, "parallel", {branches: branches, merge: merge_strategy})
+
+# Merge strategies: "all", "first", "concat"
+def parallel_all(node_id, branch_ids):
+    return parallel_node(node_id, branch_ids, "all")
+
+def parallel_race(node_id, branch_ids):
+    return parallel_node(node_id, branch_ids, "first")
+
+# -----------------------------------------------------------------------------
+# Wait Node
+# -----------------------------------------------------------------------------
+# Pauses execution for a specified duration
+
+def wait_node(node_id, duration_ms):
+    return workflow.create_node(node_id, "wait", {duration: duration_ms})
+
+def wait_seconds(node_id, seconds):
+    return wait_node(node_id, seconds * 1000)
+
+def wait_minutes(node_id, minutes):
+    return wait_node(node_id, minutes * 60000)
+
+# -----------------------------------------------------------------------------
+# Set Variable Node
+# -----------------------------------------------------------------------------
+# Sets a context variable
+
+def set_var_node(node_id, var_name, value_expr):
+    return workflow.create_node(node_id, "set_var", {variable: var_name, value: value_expr})
+
+# -----------------------------------------------------------------------------
+# Merge Node
+# -----------------------------------------------------------------------------
+# Merges data from multiple sources
+
+def merge_node(node_id, sources, strategy):
+    return workflow.create_node(node_id, "merge", {sources: sources, strategy: strategy})
+
+# -----------------------------------------------------------------------------
+# Retry Wrapper
+# -----------------------------------------------------------------------------
+# Adds retry logic to any node
+
+def with_retry(node, max_retries, delay_ms):
+    return merge(node, {max_retries: max_retries, retry_delay: delay_ms, retry_enabled: true})
+
+def with_timeout(node, timeout_ms):
+    return merge(node, {max_timeout: timeout_ms})
+
+# -----------------------------------------------------------------------------
+# Error Handling
+# -----------------------------------------------------------------------------
+
+def on_error_continue(node):
+    return merge(node, {on_error: "continue"})
+
+def on_error_stop(node):
+    return merge(node, {on_error: "stop"})
+
+def on_error_retry(node):
+    return merge(node, {on_error: "retry"})
+
+def on_error_goto(node, error_handler_id):
+    return merge(node, {on_error: "goto", error_handler: error_handler_id})

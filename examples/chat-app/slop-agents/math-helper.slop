@@ -4,103 +4,98 @@ user_msg = user_message
 
 # Try to detect numbers in the message
 numbers = []
-words = split(user_msg, " ")
+words_list = split(user_msg, " ")
 
-for word in words:
-    # Try to convert to number
-    try:
+for word in words_list with limit(100):
+    # Check if word is numeric
+    if isdigit(word):
         num = int(word)
         numbers = numbers + [num]
-    catch:
-        # Not a number, skip
-        pass
 
 # Detect operation keywords
 if "add" in lower(user_msg) or "sum" in lower(user_msg) or "plus" in lower(user_msg):
     if len(numbers) >= 2:
         result = sum(numbers)
-        emit "Adding " + str(numbers) + " = " + str(result) + " ✅"
+        emit("Adding " + str(numbers) + " = " + str(result))
     else:
-        emit "Please provide at least two numbers to add! For example: 'add 5 and 10'"
+        emit("Please provide at least two numbers to add! For example: 'add 5 and 10'")
 
 elif "multiply" in lower(user_msg) or "times" in lower(user_msg):
     if len(numbers) >= 2:
         result = 1
-        for n in numbers:
+        for n in numbers with limit(100):
             result = result * n
-        emit "Multiplying " + str(numbers) + " = " + str(result) + " ✅"
+        emit("Multiplying " + str(numbers) + " = " + str(result))
     else:
-        emit "Please provide at least two numbers to multiply! For example: 'multiply 5 and 10'"
+        emit("Please provide at least two numbers to multiply! For example: 'multiply 5 and 10'")
 
 elif "subtract" in lower(user_msg) or "minus" in lower(user_msg):
     if len(numbers) >= 2:
-        result = numbers[0]
-        for i in range(1, len(numbers)):
-            result = result - numbers[i]
-        emit "Subtracting: " + str(numbers[0])
-        for i in range(1, len(numbers)):
-            emit " - " + str(numbers[i])
-        emit " = " + str(result) + " ✅"
+        result = first(numbers)
+        rest = slice(numbers, 1, len(numbers))
+        for n in rest with limit(100):
+            result = result - n
+        emit("Subtracting: " + str(first(numbers)) + " - rest = " + str(result))
     else:
-        emit "Please provide at least two numbers to subtract! For example: 'subtract 10 and 3'"
+        emit("Please provide at least two numbers to subtract! For example: 'subtract 10 and 3'")
 
 elif "square" in lower(user_msg):
     if len(numbers) >= 1:
-        num = numbers[0]
+        num = first(numbers)
         result = num * num
-        emit str(num) + "² = " + str(result) + " ✅"
+        emit(str(num) + " squared = " + str(result))
     else:
-        emit "Please provide a number to square! For example: 'square 7'"
+        emit("Please provide a number to square! For example: 'square 7'")
 
 elif "prime" in lower(user_msg):
-    emit "Prime numbers are natural numbers greater than 1 that have no positive divisors other than 1 and themselves.\n\n"
-    emit "Examples: 2, 3, 5, 7, 11, 13, 17, 19, 23, 29...\n\n"
-    emit "Fun fact: 2 is the only even prime number!"
+    emit("Prime numbers are natural numbers greater than 1 that have no positive divisors other than 1 and themselves.\n\n")
+    emit("Examples: 2, 3, 5, 7, 11, 13, 17, 19, 23, 29...\n\n")
+    emit("Fun fact: 2 is the only even prime number!")
 
 elif "fibonacci" in lower(user_msg):
-    emit "The Fibonacci sequence: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55...\n\n"
-    emit "Each number is the sum of the previous two!\n\n"
-    emit "F(n) = F(n-1) + F(n-2)"
+    emit("The Fibonacci sequence: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55...\n\n")
+    emit("Each number is the sum of the previous two!\n\n")
+    emit("F(n) = F(n-1) + F(n-2)")
 
 elif "formula" in lower(user_msg):
-    emit "Common formulas:\n\n"
-    emit "🔹 Area of circle: A = πr²\n"
-    emit "🔹 Area of triangle: A = ½bh\n"
-    emit "🔹 Pythagorean theorem: a² + b² = c²\n"
-    emit "🔹 Quadratic formula: x = (-b ± √(b²-4ac)) / 2a\n"
-    emit "🔹 Distance: d = √((x₂-x₁)² + (y₂-y₁)²)\n\n"
-    emit "Which formula would you like to know more about?"
+    emit("Common formulas:\n\n")
+    emit("- Area of circle: A = pi*r^2\n")
+    emit("- Area of triangle: A = (1/2)*b*h\n")
+    emit("- Pythagorean theorem: a^2 + b^2 = c^2\n")
+    emit("- Quadratic formula: x = (-b +/- sqrt(b^2-4ac)) / 2a\n")
+    emit("- Distance: d = sqrt((x2-x1)^2 + (y2-y1)^2)\n\n")
+    emit("Which formula would you like to know more about?")
 
 elif "factor" in lower(user_msg):
     if len(numbers) >= 1:
-        num = numbers[0]
-        emit "Factors of " + str(num) + ": "
+        num = first(numbers)
+        emit("Factors of " + str(num) + ": ")
         factors = []
-        for i in range(1, num + 1):
+        for i in range(1, num + 1) with limit(1000):
             if num % i == 0:
                 factors = factors + [i]
-        emit str(factors) + " ✅"
+        emit(str(factors))
     else:
-        emit "Please provide a number to find factors! For example: 'factors of 12'"
+        emit("Please provide a number to find factors! For example: 'factors of 12'")
 
 elif "percentage" in lower(user_msg) or "percent" in lower(user_msg):
     if len(numbers) >= 2:
-        percentage = (numbers[0] / numbers[1]) * 100
-        emit str(numbers[0]) + " is " + str(percentage) + "% of " + str(numbers[1]) + " ✅"
+        percentage = (first(numbers) / nth(numbers, 1)) * 100
+        emit(str(first(numbers)) + " is " + str(percentage) + "% of " + str(nth(numbers, 1)))
     else:
-        emit "To calculate percentage, provide two numbers. For example: 'what percentage is 25 of 200?'"
+        emit("To calculate percentage, provide two numbers. For example: 'what percentage is 25 of 200?'")
 
 else:
-    emit "I'm your Math Helper! 🧮\n\n"
-    emit "I can help with:\n"
-    emit "• Basic operations (add, subtract, multiply)\n"
-    emit "• Squares and powers\n"
-    emit "• Finding factors\n"
-    emit "• Percentages\n"
-    emit "• Explaining concepts (prime numbers, Fibonacci, formulas)\n\n"
+    emit("I'm your Math Helper!\n\n")
+    emit("I can help with:\n")
+    emit("- Basic operations (add, subtract, multiply)\n")
+    emit("- Squares and powers\n")
+    emit("- Finding factors\n")
+    emit("- Percentages\n")
+    emit("- Explaining concepts (prime numbers, Fibonacci, formulas)\n\n")
 
     if len(numbers) > 0:
-        emit "I found these numbers in your message: " + str(numbers) + "\n\n"
-        emit "Try asking me to 'add', 'multiply', 'subtract', or 'square' them!"
+        emit("I found these numbers in your message: " + str(numbers) + "\n\n")
+        emit("Try asking me to 'add', 'multiply', 'subtract', or 'square' them!")
     else:
-        emit "Try asking: 'add 5 and 10' or 'what is the square of 7?'"
+        emit("Try asking: 'add 5 and 10' or 'what is the square of 7?'")

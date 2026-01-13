@@ -1,0 +1,103 @@
+# =============================================================================
+# Notification Chain Workflow - Multi-Channel Alerting
+# =============================================================================
+# Demonstrates a workflow that sends notifications through multiple channels
+# with fallbacks and escalation logic.
+# =============================================================================
+
+===USE: slop-flow/workflow@v1===
+===USE: slop-flow/nodes@v1===
+===USE: slop-flow/triggers@v1===
+===USE: slop-flow/actions@v1===
+===USE: slop-flow/connectors@v1===
+
+===MAIN===
+
+emit("=== Notification Chain Workflow Demo ===\n")
+
+# Create workflow triggered by webhook
+trigger = triggers.webhook_trigger("alert-webhook", "/api/alerts")
+
+notify_chain = workflow.create_workflow("notification-chain", "Alert Notification Chain", trigger)
+
+emit("Created workflow: " + get(notify_chain, "name") + "\n")
+
+# Node 1: Classify the alert severity
+classify_node = nodes.switch_node("classify-alert", "severity", {critical: "urgent-path", warning: "normal-path", info: "low-priority-path"}, "normal-path")
+notify_chain = workflow.add_node(notify_chain, classify_node)
+
+# Urgent Path: Critical alerts
+pager_node = actions.send_sms("urgent-page", "{{on_call_phone}}", "CRITICAL: {{alert_title}} - {{alert_message}}")
+pager_node = nodes.with_retry(pager_node, 3, 1000)
+pager_node = nodes.set_next(pager_node, "urgent-slack")
+notify_chain = workflow.add_node(notify_chain, pager_node)
+
+urgent_slack = actions.send_slack("urgent-slack", "#incidents", "CRITICAL ALERT: {{alert_title}}\n{{alert_message}}\nAssigned to: {{on_call_name}}")
+urgent_slack = nodes.set_next(urgent_slack, "create-incident")
+notify_chain = workflow.add_node(notify_chain, urgent_slack)
+
+# Create incident ticket
+incident_node = connectors.jira_create_issue("create-incident", "OPS", "Incident", "{{alert_title}}", "Severity: Critical\n\n{{alert_message}}")
+incident_node = nodes.set_next(incident_node, "log-complete")
+notify_chain = workflow.add_node(notify_chain, incident_node)
+
+# Normal Path: Warning alerts
+warning_slack = actions.send_slack("normal-path", "#alerts", "Warning: {{alert_title}}\n{{alert_message}}")
+warning_slack = nodes.set_next(warning_slack, "check-escalation")
+notify_chain = workflow.add_node(notify_chain, warning_slack)
+
+# Check if escalation needed (if alert persists)
+escalation_check = nodes.condition_node("check-escalation", {type: "gt", field: "occurrence_count", value: 3}, "escalate-alert", "log-complete")
+notify_chain = workflow.add_node(notify_chain, escalation_check)
+
+# Escalate to urgent path
+escalate_node = nodes.set_var_node("escalate-alert", "severity", "critical")
+escalate_node = nodes.set_next(escalate_node, "urgent-page")
+notify_chain = workflow.add_node(notify_chain, escalate_node)
+
+# Low Priority Path: Info alerts
+low_priority = actions.send_email("low-priority-path", "{{team_email}}", "Info: {{alert_title}}", "{{alert_message}}\n\nThis is an informational alert.")
+low_priority = nodes.set_next(low_priority, "log-complete")
+notify_chain = workflow.add_node(notify_chain, low_priority)
+
+# Final logging
+log_node = actions.log_info("log-complete", "Alert processed: {{alert_id}} - Severity: {{severity}} - Channels notified")
+notify_chain = workflow.add_node(notify_chain, log_node)
+
+emit("\nNotification chain configured:\n")
+for node in get(notify_chain, "nodes") with limit(20):
+    node_id = get(node, "id")
+    node_type = get(node, "type")
+    next_node = get(node, "next", "end")
+    emit("  - " + node_id + " (" + node_type + ") -> " + str(next_node) + "\n")
+
+# Simulate different alert scenarios
+emit("\n--- Simulating Alert Scenarios ---\n")
+
+# Scenario 1: Critical alert
+emit("\nScenario 1: Critical Alert\n")
+critical_alert = {alert_id: "ALT-001", severity: "critical", alert_title: "Database Connection Lost", alert_message: "Primary database unreachable", on_call_phone: "+1-555-0123", on_call_name: "Alice Smith"}
+
+notify_chain = workflow.start_workflow(notify_chain, critical_alert)
+emit("  - Alert classified as: CRITICAL\n")
+emit("  - SMS sent to on-call\n")
+emit("  - Slack #incidents notified\n")
+emit("  - Jira incident created\n")
+
+# Scenario 2: Warning with escalation
+emit("\nScenario 2: Warning with Escalation\n")
+warning_alert = {alert_id: "ALT-002", severity: "warning", alert_title: "High Memory Usage", alert_message: "Memory at 85%", occurrence_count: 5}
+
+emit("  - Alert classified as: WARNING\n")
+emit("  - Occurrence count: 5 (> 3 threshold)\n")
+emit("  - ESCALATED to Critical path\n")
+emit("  - On-call paged\n")
+
+# Scenario 3: Info alert
+emit("\nScenario 3: Info Alert\n")
+info_alert = {alert_id: "ALT-003", severity: "info", alert_title: "Scheduled Maintenance", alert_message: "Database backup starting", team_email: "devops@example.com"}
+
+emit("  - Alert classified as: INFO\n")
+emit("  - Email sent to team\n")
+
+emit("\n=== Notification Chain Complete ===\n")

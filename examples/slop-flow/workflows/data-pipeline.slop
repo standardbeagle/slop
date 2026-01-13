@@ -1,0 +1,98 @@
+# =============================================================================
+# Data Pipeline Workflow - ETL-Style Data Processing
+# =============================================================================
+# Demonstrates a complete data pipeline with extraction, transformation,
+# validation, and loading stages.
+# =============================================================================
+
+===USE: slop-flow/workflow@v1===
+===USE: slop-flow/nodes@v1===
+===USE: slop-flow/triggers@v1===
+===USE: slop-flow/actions@v1===
+===USE: slop-flow/utils@v1===
+
+===MAIN===
+
+emit("=== Data Pipeline Workflow Demo ===\n")
+
+# Create workflow with schedule trigger (runs daily)
+trigger = triggers.every_day_at("daily-etl", 2, 0)  # 2:00 AM
+
+pipeline = workflow.create_workflow("data-pipeline", "Daily Data Pipeline", trigger)
+pipeline = workflow.set_error_handler(pipeline, "retry")
+
+emit("Created pipeline: " + get(pipeline, "name") + "\n")
+emit("Trigger: " + str(get(pipeline, "trigger")) + "\n")
+
+# Stage 1: Extract - Fetch data from source API
+extract_node = actions.http_get("extract-data", "https://api.example.com/data?date={{date}}", {authorization: "Bearer {{api_key}}"})
+extract_node = nodes.with_retry(extract_node, 3, 5000)
+extract_node = nodes.set_next(extract_node, "validate-data")
+pipeline = workflow.add_node(pipeline, extract_node)
+
+# Stage 2: Validate - Check data quality
+validate_node = nodes.condition_node("validate-data", {type: "gt", field: "record_count", value: 0}, "transform-data", "handle-empty")
+pipeline = workflow.add_node(pipeline, validate_node)
+
+# Stage 2b: Handle empty data
+empty_handler = actions.log_error("handle-empty", "No data received for date {{date}}")
+empty_handler = nodes.set_next(empty_handler, "__end__")
+pipeline = workflow.add_node(pipeline, empty_handler)
+
+# Stage 3: Transform - Process and clean data
+transform_node = nodes.transform_node("transform-data", "map", {field: "records", expression: "clean_record"})
+transform_node = nodes.set_next(transform_node, "filter-valid")
+pipeline = workflow.add_node(pipeline, transform_node)
+
+# Stage 4: Filter - Keep only valid records
+filter_node = nodes.filter_transform("filter-valid", "records", {type: "equals", field: "is_valid", value: true})
+filter_node = nodes.set_next(filter_node, "aggregate-stats")
+pipeline = workflow.add_node(pipeline, filter_node)
+
+# Stage 5: Aggregate - Calculate statistics
+aggregate_node = nodes.aggregate_transform("aggregate-stats", "sum", "amount")
+aggregate_node = nodes.set_next(aggregate_node, "load-data")
+pipeline = workflow.add_node(pipeline, aggregate_node)
+
+# Stage 6: Load - Insert into database
+load_node = actions.db_insert("load-data", "processed_data", "{{transformed_records}}")
+load_node = nodes.with_retry(load_node, 2, 10000)
+load_node = nodes.set_next(load_node, "notify-complete")
+pipeline = workflow.add_node(pipeline, load_node)
+
+# Stage 7: Notify - Send completion notification
+notify_node = actions.send_slack("notify-complete", "#data-team", "Pipeline complete: {{record_count}} records processed, total: ${{total_amount}}")
+pipeline = workflow.add_node(pipeline, notify_node)
+
+emit("\nPipeline stages:\n")
+stage_num = 1
+for node in get(pipeline, "nodes") with limit(20):
+    emit("  " + str(stage_num) + ". " + get(node, "id") + " (" + get(node, "type") + ")\n")
+    stage_num = stage_num + 1
+
+# Simulate pipeline execution
+emit("\n--- Simulating Pipeline Execution ---\n")
+
+# Sample input data
+sample_input = {date: "2024-01-15", api_key: "sk-test-xxx", record_count: 150, total_amount: 45230.50}
+
+pipeline = workflow.start_workflow(pipeline, sample_input)
+
+# Process through stages
+stages = ["Extract", "Validate", "Transform", "Filter", "Aggregate", "Load", "Notify"]
+stage_idx = 0
+for stage_name in stages with limit(10):
+    emit("Stage: " + stage_name + " - OK\n")
+    result = {stage: stage_name, success: true, records_processed: 150}
+    pipeline = workflow.advance_workflow(pipeline, result)
+    stage_idx = stage_idx + 1
+
+pipeline = workflow.complete_workflow(pipeline)
+
+# Generate report
+ctx = get(pipeline, "context")
+emit("\n=== Pipeline Report ===\n")
+emit("Status: " + get(pipeline, "status") + "\n")
+emit("Input records: " + str(get(sample_input, "record_count")) + "\n")
+emit("Total amount: $" + str(get(sample_input, "total_amount")) + "\n")
+emit("Results collected: " + str(len(get(ctx, "results", []))) + "\n")

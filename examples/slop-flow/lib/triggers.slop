@@ -1,0 +1,152 @@
+# =============================================================================
+# SLOP Flow - Trigger Types
+# =============================================================================
+# Defines various trigger types that can start workflows.
+# Triggers determine when and how a workflow begins execution.
+# =============================================================================
+
+===SOURCE: triggers===
+id: "slop-flow/triggers@v1"
+uses: {}
+---
+
+# -----------------------------------------------------------------------------
+# Manual Trigger
+# -----------------------------------------------------------------------------
+# Workflow is triggered manually by calling start_workflow
+
+def manual_trigger(trigger_id):
+    return {id: trigger_id, type: "manual", config: {}}
+
+def manual_trigger_with_schema(trigger_id, input_schema):
+    return {id: trigger_id, type: "manual", config: {schema: input_schema}}
+
+# -----------------------------------------------------------------------------
+# Schedule Trigger (Cron)
+# -----------------------------------------------------------------------------
+# Workflow runs on a schedule
+
+def schedule_trigger(trigger_id, cron_expr):
+    return {id: trigger_id, type: "schedule", config: {cron: cron_expr}}
+
+# Common schedule helpers
+def every_minute(trigger_id):
+    return schedule_trigger(trigger_id, "* * * * *")
+
+def every_hour(trigger_id):
+    return schedule_trigger(trigger_id, "0 * * * *")
+
+def every_day_at(trigger_id, hour, minute):
+    return schedule_trigger(trigger_id, str(minute) + " " + str(hour) + " * * *")
+
+def every_weekday(trigger_id, hour, minute):
+    return schedule_trigger(trigger_id, str(minute) + " " + str(hour) + " * * 1-5")
+
+def every_week_on(trigger_id, day_of_week, hour, minute):
+    return schedule_trigger(trigger_id, str(minute) + " " + str(hour) + " * * " + str(day_of_week))
+
+def every_month_on(trigger_id, day_of_month, hour, minute):
+    return schedule_trigger(trigger_id, str(minute) + " " + str(hour) + " " + str(day_of_month) + " * *")
+
+# -----------------------------------------------------------------------------
+# Webhook Trigger
+# -----------------------------------------------------------------------------
+# Workflow is triggered by an incoming HTTP request
+
+def webhook_trigger(trigger_id, path):
+    return {id: trigger_id, type: "webhook", config: {path: path, method: "POST"}}
+
+def webhook_get(trigger_id, path):
+    return {id: trigger_id, type: "webhook", config: {path: path, method: "GET"}}
+
+def webhook_with_auth(trigger_id, path, auth_type, auth_config):
+    return {id: trigger_id, type: "webhook", config: {path: path, method: "POST", auth: auth_type, auth_config: auth_config}}
+
+def webhook_hmac(trigger_id, path, secret_header):
+    return webhook_with_auth(trigger_id, path, "hmac", {header: secret_header})
+
+# -----------------------------------------------------------------------------
+# File Trigger
+# -----------------------------------------------------------------------------
+# Workflow triggers when files change in a directory
+
+def file_trigger(trigger_id, watch_path, event_types):
+    return {id: trigger_id, type: "file", config: {path: watch_path, events: event_types}}
+
+def file_created_trigger(trigger_id, watch_path):
+    return file_trigger(trigger_id, watch_path, ["created"])
+
+def file_modified_trigger(trigger_id, watch_path):
+    return file_trigger(trigger_id, watch_path, ["modified"])
+
+def file_deleted_trigger(trigger_id, watch_path):
+    return file_trigger(trigger_id, watch_path, ["deleted"])
+
+def file_any_change_trigger(trigger_id, watch_path):
+    return file_trigger(trigger_id, watch_path, ["created", "modified", "deleted"])
+
+# -----------------------------------------------------------------------------
+# Event Trigger
+# -----------------------------------------------------------------------------
+# Workflow triggers on custom events
+
+def event_trigger(trigger_id, event_name):
+    return {id: trigger_id, type: "event", config: {event: event_name}}
+
+def event_trigger_with_filter(trigger_id, event_name, filter_condition):
+    return {id: trigger_id, type: "event", config: {event: event_name, filter: filter_condition}}
+
+# -----------------------------------------------------------------------------
+# Queue Trigger
+# -----------------------------------------------------------------------------
+# Workflow processes messages from a queue
+
+def queue_trigger(trigger_id, queue_name):
+    return {id: trigger_id, type: "queue", config: {queue: queue_name, batch_size: 1}}
+
+def queue_batch_trigger(trigger_id, queue_name, batch_size, wait_timeout_ms):
+    return {id: trigger_id, type: "queue", config: {queue: queue_name, batch_size: batch_size, wait_timeout: wait_timeout_ms}}
+
+# -----------------------------------------------------------------------------
+# Chain Trigger
+# -----------------------------------------------------------------------------
+# Workflow triggers when another workflow completes
+
+def chain_trigger(trigger_id, parent_workflow_id):
+    return {id: trigger_id, type: "chain", config: {parent: parent_workflow_id, on: "complete"}}
+
+def chain_on_success(trigger_id, parent_workflow_id):
+    return {id: trigger_id, type: "chain", config: {parent: parent_workflow_id, on: "success"}}
+
+def chain_on_failure(trigger_id, parent_workflow_id):
+    return {id: trigger_id, type: "chain", config: {parent: parent_workflow_id, on: "failure"}}
+
+# -----------------------------------------------------------------------------
+# Polling Trigger
+# -----------------------------------------------------------------------------
+# Periodically checks for new data
+
+def poll_trigger(trigger_id, poll_interval_ms, poll_action):
+    return {id: trigger_id, type: "poll", config: {interval: poll_interval_ms, action: poll_action}}
+
+def poll_api(trigger_id, interval_ms, endpoint, check_field):
+    return {id: trigger_id, type: "poll", config: {interval: interval_ms, endpoint: endpoint, check_field: check_field}}
+
+# -----------------------------------------------------------------------------
+# Conditional Trigger
+# -----------------------------------------------------------------------------
+# Only triggers if a condition is met
+
+def conditional_trigger(trigger_id, base_trigger, condition):
+    return {id: trigger_id, type: "conditional", config: {base: base_trigger, condition: condition}}
+
+# -----------------------------------------------------------------------------
+# Debounce/Throttle
+# -----------------------------------------------------------------------------
+# Rate-limit trigger firing
+
+def debounced_trigger(trigger_id, base_trigger, debounce_ms):
+    return {id: trigger_id, type: "debounce", config: {base: base_trigger, delay: debounce_ms}}
+
+def throttled_trigger(trigger_id, base_trigger, min_interval_ms):
+    return {id: trigger_id, type: "throttle", config: {base: base_trigger, interval: min_interval_ms}}

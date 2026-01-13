@@ -1,3 +1,284 @@
+# =============================================================================
+# SLOP Language Basics Showcase
+# =============================================================================
+# This example demonstrates the fundamental features of the SLOP language,
+# from basic types to control flow and type checking.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Part 1: Basic Types
+# -----------------------------------------------------------------------------
+# SLOP supports several primitive types: strings, integers, floats, booleans,
+# and the special 'none' value.
+
+# Strings - text enclosed in quotes
 name = "World"
 greeting = "Hello, " + name + "!"
-emit(greeting)
+# Note: For multi-line text, use string concatenation or a single line
+multiline = "This string spans multiple lines"
+
+# Integers - whole numbers
+count = 42
+negative = -17
+binary = 255          # integer values
+
+# Floats - decimal numbers
+pi = 3.14159
+temperature = -40.0
+scientific = 1.5e10   # 15000000000
+
+# Booleans - true or false
+is_active = true
+is_complete = false
+
+# None - represents absence of value
+empty_value = none
+
+emit("=== Part 1: Basic Types ===")
+emit(greeting: greeting, count: count, pi: pi, is_active: is_active)
+
+# -----------------------------------------------------------------------------
+# Part 2: String Operations
+# -----------------------------------------------------------------------------
+# SLOP provides rich string manipulation functions.
+
+text = "  Hello, SLOP World!  "
+
+# Case transformations
+upper_text = upper(text)           # "  HELLO, SLOP WORLD!  "
+lower_text = lower(text)           # "  hello, slop world!  "
+title_text = title(strip(text))    # "Hello, Slop World!"
+
+# Whitespace handling
+trimmed = strip(text)              # "Hello, SLOP World!"
+left_trimmed = lstrip(text)        # "Hello, SLOP World!  "
+right_trimmed = rstrip(text)       # "  Hello, SLOP World!"
+
+# String searching
+has_slop = contains(text, "SLOP")  # true
+starts_hello = startswith(trimmed, "Hello")  # true
+ends_bang = endswith(trimmed, "!")           # true
+
+# String formatting
+template = "Name: {}, Age: {}"
+formatted = format(template, "Alice", 30)  # "Name: Alice, Age: 30"
+
+# Splitting and joining
+words = split("apple,banana,cherry", ",")   # ["apple", "banana", "cherry"]
+rejoined = join("-", words)                 # "apple-banana-cherry"
+
+# Substring and manipulation
+substring = slice("Hello World", 0, 5)      # "Hello"
+replaced = replace("Hello World", "World", "SLOP")  # "Hello SLOP"
+repeated = repeat("*", 5)                   # "*****"
+padded = pad_left("42", 5, "0")             # "00042"
+
+emit("=== Part 2: String Operations ===")
+emit(trimmed: trimmed, upper: upper_text, has_slop: has_slop)
+emit(formatted: formatted, words: words, rejoined: rejoined)
+
+# -----------------------------------------------------------------------------
+# Part 3: Arithmetic Operations
+# -----------------------------------------------------------------------------
+# SLOP supports standard math operations and many mathematical functions.
+
+# Basic arithmetic
+a = 10
+b = 3
+sum_result = a + b       # 13
+diff = a - b             # 7
+product = a * b          # 30
+quotient = a / b         # 3.333...
+remainder = a % b        # 1
+power = a ** b           # 1000
+
+# Compound assignment
+x = 5
+x += 3   # x = 8
+x *= 2   # x = 16
+x -= 4   # x = 12
+x /= 3   # x = 4
+
+# Mathematical functions
+absolute = abs(-42)      # 42
+square_root = sqrt(16)   # 4.0
+minimum = min(5, 3, 8)   # 3
+maximum = max(5, 3, 8)   # 8
+rounded = round(3.7)     # 4
+floor_val = floor(3.7)   # 3
+ceil_val = ceil(3.2)     # 4
+
+# Advanced math
+power_fn = pow(2, 10)    # 1024
+natural_log = log(10)    # ~2.303 (natural log)
+log_base_10 = log10(100) # 2.0
+sine = sin(0)            # 0.0
+cosine = cos(0)          # 1.0
+
+# Working with lists of numbers
+numbers = [1, 2, 3, 4, 5]
+total = sum(numbers)     # 15
+average = avg(numbers)   # 3.0
+list_min = min(numbers)  # 1
+list_max = max(numbers)  # 5
+
+emit("=== Part 3: Arithmetic Operations ===")
+emit(sum: sum_result, product: product, power: power)
+emit(sqrt: square_root, min: minimum, max: maximum)
+emit(total: total, average: average)
+
+# -----------------------------------------------------------------------------
+# Part 4: Comparisons and Boolean Operations
+# -----------------------------------------------------------------------------
+# SLOP supports comparison operators and boolean logic.
+
+# Comparison operators
+p = 10
+q = 20
+
+is_equal = p == q        # false
+is_not_equal = p != q    # true
+is_less = p < q          # true
+is_greater = p > q       # false
+is_less_eq = p <= q      # true
+is_greater_eq = p >= q   # false
+
+# Boolean operators
+flag1 = true
+flag2 = false
+
+both_true = flag1 and flag2    # false
+either_true = flag1 or flag2   # true
+not_flag1 = not flag1          # false
+
+# Complex boolean expressions
+in_range = (p >= 5) and (p <= 15)   # true (10 is between 5 and 15)
+outside = (p < 5) or (p > 15)       # false
+
+# Chained comparisons
+value = 7
+# Check if value is in range [5, 10]
+valid_range = (value >= 5) and (value <= 10)  # true
+
+emit("=== Part 4: Comparisons and Boolean Operations ===")
+emit(is_less: is_less, both_true: both_true, either_true: either_true)
+emit(in_range: in_range, valid_range: valid_range)
+
+# -----------------------------------------------------------------------------
+# Part 5: Conditional Logic
+# -----------------------------------------------------------------------------
+# SLOP supports if/elif/else for branching logic.
+
+score = 85
+
+# Simple if/else
+if score >= 60:
+    result = "Pass"
+else:
+    result = "Fail"
+
+# if/elif/else chain for grades
+if score >= 90:
+    grade = "A"
+elif score >= 80:
+    grade = "B"
+elif score >= 70:
+    grade = "C"
+elif score >= 60:
+    grade = "D"
+else:
+    grade = "F"
+
+# Nested conditionals
+age = 25
+has_license = true
+
+if age >= 18:
+    if has_license:
+        can_drive = "Yes, can drive"
+    else:
+        can_drive = "No license"
+else:
+    can_drive = "Too young"
+
+# Conditional with boolean expressions
+temperature_c = 22
+humidity = 65
+
+if temperature_c >= 20 and temperature_c <= 25:
+    if humidity >= 40 and humidity <= 70:
+        comfort = "Comfortable"
+    else:
+        comfort = "Humidity issue"
+else:
+    comfort = "Temperature issue"
+
+emit("=== Part 5: Conditional Logic ===")
+emit(score: score, result: result, grade: grade)
+emit(can_drive: can_drive, comfort: comfort)
+
+# -----------------------------------------------------------------------------
+# Part 6: Type Checking
+# -----------------------------------------------------------------------------
+# SLOP provides functions to check and inspect types at runtime.
+
+# Test values of different types
+str_val = "hello"
+int_val = 42
+float_val = 3.14
+bool_val = true
+none_val = none
+list_val = [1, 2, 3]
+map_val = {name: "test", value: 100}
+
+# Type checking predicates
+emit("=== Part 6: Type Checking ===")
+emit(is_string_str: is_string(str_val))      # true
+emit(is_string_int: is_string(int_val))      # false
+emit(is_int: is_int(int_val))                # true
+emit(is_float: is_float(float_val))          # true
+emit(is_number_int: is_number(int_val))      # true
+emit(is_number_float: is_number(float_val))  # true
+emit(is_bool: is_bool(bool_val))             # true
+emit(is_none: is_none(none_val))             # true
+emit(is_list: is_list(list_val))             # true
+emit(is_map: is_map(map_val))                # true
+
+# Getting type as string
+emit(type_str: type(str_val))     # "string"
+emit(type_int: type(int_val))     # "int"
+emit(type_float: type(float_val)) # "float"
+emit(type_bool: type(bool_val))   # "bool"
+emit(type_none: type(none_val))   # "none"
+emit(type_list: type(list_val))   # "list"
+emit(type_map: type(map_val))     # "map"
+
+# Type conversion
+str_to_int = int("42")       # 42
+int_to_str = str(42)         # "42"
+float_to_int = int(3.9)      # 3 (truncates)
+int_to_float = float(42)     # 42.0
+to_bool = bool(1)            # true
+bool_zero = bool(0)          # false
+
+conversions = {str_to_int: str_to_int, int_to_str: int_to_str, float_to_int: float_to_int, int_to_float: int_to_float, to_bool: to_bool, bool_zero: bool_zero}
+emit(conversions: conversions)
+
+# -----------------------------------------------------------------------------
+# Summary
+# -----------------------------------------------------------------------------
+# This example covered:
+# 1. Basic types: string, int, float, bool, none
+# 2. String operations: case, trim, search, format, split/join
+# 3. Arithmetic: operators, math functions, aggregations
+# 4. Comparisons: equality, ordering, boolean logic
+# 5. Conditionals: if/elif/else branching
+# 6. Type checking: is_* predicates, type(), conversions
+#
+# For more advanced features, see:
+# - loop.slop: Iteration and data processing
+# - modules.slop: Module system and code organization
+# - chat-app/: Full application example with MCP integration
+# =============================================================================
+
+emit("=== Hello SLOP Complete! ===")

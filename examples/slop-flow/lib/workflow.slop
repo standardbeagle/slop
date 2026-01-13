@@ -1,0 +1,125 @@
+# =============================================================================
+# SLOP Flow - Workflow Engine Core
+# =============================================================================
+# Defines the core workflow execution patterns for SLOP Flow.
+# This module provides the foundation for building N8N-style workflows
+# programmatically instead of visually.
+# =============================================================================
+
+===SOURCE: workflow===
+id: "slop-flow/workflow@v1"
+uses: {}
+---
+
+# -----------------------------------------------------------------------------
+# Workflow Definition
+# -----------------------------------------------------------------------------
+# A workflow is defined as a map containing:
+#   - id: Unique identifier
+#   - name: Human-readable name
+#   - trigger: What starts the workflow
+#   - nodes: List of execution nodes
+#   - on_error: Error handling strategy
+
+def create_workflow(workflow_id, workflow_name, trigger_config):
+    return {id: workflow_id, name: workflow_name, trigger: trigger_config, nodes: [], status: "created", context: {}, error_handler: "stop"}
+
+def add_node(workflow, node):
+    new_nodes = get(workflow, "nodes") + [node]
+    return merge(workflow, {nodes: new_nodes})
+
+def set_error_handler(workflow, handler):
+    return merge(workflow, {error_handler: handler})
+
+# -----------------------------------------------------------------------------
+# Node Definitions
+# -----------------------------------------------------------------------------
+# Nodes are the building blocks of workflows. Each node has:
+#   - id: Unique node identifier
+#   - type: Node type (action, condition, transform, etc.)
+#   - config: Node-specific configuration
+#   - next: ID of next node (or list for branching)
+
+def create_node(node_id, node_type, config):
+    return {id: node_id, type: node_type, config: config, next: "", status: "pending", retries: 0, max_retries: 3}
+
+def set_next(node, next_node_id):
+    return merge(node, {next: next_node_id})
+
+def set_retry_policy(node, max_retries, retry_delay):
+    return merge(node, {max_retries: max_retries, retry_delay: retry_delay})
+
+# -----------------------------------------------------------------------------
+# Workflow Execution
+# -----------------------------------------------------------------------------
+# Execute a workflow by processing nodes in sequence
+
+def start_workflow(workflow, input_data):
+    ctx = merge(get(workflow, "context"), {input: input_data, started_at: now(), current_node: 0})
+    return merge(workflow, {status: "running", context: ctx})
+
+def get_current_node(workflow):
+    nodes = get(workflow, "nodes")
+    current_idx = get(get(workflow, "context"), "current_node")
+    if current_idx >= len(nodes):
+        return {id: "__end__", type: "end"}
+    return nth(nodes, current_idx)
+
+def advance_workflow(workflow, node_result):
+    ctx = get(workflow, "context")
+    current_idx = get(ctx, "current_node")
+    results = get(ctx, "results", [])
+    new_results = results + [node_result]
+    new_ctx = merge(ctx, {current_node: current_idx + 1, results: new_results, last_result: node_result})
+    return merge(workflow, {context: new_ctx})
+
+def complete_workflow(workflow):
+    ctx = get(workflow, "context")
+    final_ctx = merge(ctx, {completed_at: now()})
+    return merge(workflow, {status: "completed", context: final_ctx})
+
+def fail_workflow(workflow, error_message):
+    ctx = get(workflow, "context")
+    final_ctx = merge(ctx, {failed_at: now(), error: error_message})
+    return merge(workflow, {status: "failed", context: final_ctx})
+
+# -----------------------------------------------------------------------------
+# Context Management
+# -----------------------------------------------------------------------------
+# The workflow context stores data that flows between nodes
+
+def set_context_var(workflow, var_name, value):
+    ctx = get(workflow, "context")
+    new_ctx = merge(ctx, {var_name: value})
+    return merge(workflow, {context: new_ctx})
+
+def get_context_var(workflow, var_name, default_val):
+    ctx = get(workflow, "context")
+    if has_key(ctx, var_name):
+        return get(ctx, var_name)
+    return default_val
+
+def get_last_result(workflow):
+    return get(get(workflow, "context"), "last_result", {})
+
+# -----------------------------------------------------------------------------
+# Variable Substitution
+# -----------------------------------------------------------------------------
+# Replace {{variable}} patterns in strings with context values
+
+def substitute_vars(template_str, context):
+    result = template_str
+    for pair in items(context) with limit(100):
+        key = first(pair)
+        val = last(pair)
+        placeholder = "{{" + str(key) + "}}"
+        result = replace(result, placeholder, str(val))
+    return result
+
+# -----------------------------------------------------------------------------
+# Workflow Summary
+# -----------------------------------------------------------------------------
+
+def workflow_summary(workflow):
+    ctx = get(workflow, "context")
+    return {id: get(workflow, "id"), name: get(workflow, "name"), status: get(workflow, "status"), node_count: len(get(workflow, "nodes")), results_count: len(get(ctx, "results", []))}

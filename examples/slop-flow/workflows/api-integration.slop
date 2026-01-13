@@ -1,0 +1,129 @@
+# =============================================================================
+# API Integration Workflow - External Service Orchestration
+# =============================================================================
+# Demonstrates integration with multiple external APIs including
+# data synchronization, transformation, and multi-service coordination.
+# =============================================================================
+
+===USE: slop-flow/workflow@v1===
+===USE: slop-flow/nodes@v1===
+===USE: slop-flow/triggers@v1===
+===USE: slop-flow/actions@v1===
+===USE: slop-flow/connectors@v1===
+===USE: slop-flow/utils@v1===
+
+===MAIN===
+
+emit("=== API Integration Workflow Demo ===\n")
+
+# Create workflow triggered by new Stripe payment webhook
+trigger = triggers.webhook_hmac("stripe-webhook", "/webhooks/stripe", "Stripe-Signature")
+
+integration = workflow.create_workflow("api-integration", "Order Processing Integration", trigger)
+
+emit("Created workflow: " + get(integration, "name") + "\n")
+
+# Step 1: Validate webhook payload
+validate_node = nodes.condition_node("validate-payload", {type: "equals", field: "event_type", value: "payment_intent.succeeded"}, "extract-payment", "ignore-event")
+integration = workflow.add_node(integration, validate_node)
+
+# Ignore non-payment events
+ignore_node = actions.log_debug("ignore-event", "Ignoring event type: {{event_type}}")
+integration = workflow.add_node(integration, ignore_node)
+
+# Step 2: Extract payment details
+extract_node = nodes.extract_transform("extract-payment", ["customer_id", "amount", "currency", "metadata"])
+extract_node = nodes.set_next(extract_node, "fetch-customer")
+integration = workflow.add_node(integration, extract_node)
+
+# Step 3: Fetch customer from Stripe
+fetch_customer = actions.http_get("fetch-customer", "https://api.stripe.com/v1/customers/{{customer_id}}", {authorization: "Bearer {{stripe_key}}"})
+fetch_customer = nodes.with_retry(fetch_customer, 2, 2000)
+fetch_customer = nodes.set_next(fetch_customer, "sync-to-crm")
+integration = workflow.add_node(integration, fetch_customer)
+
+# Step 4: Sync customer to CRM (Parallel operations)
+crm_sync = nodes.parallel_all("sync-to-crm", ["update-hubspot", "update-salesforce"])
+crm_sync = nodes.set_next(crm_sync, "create-order")
+integration = workflow.add_node(integration, crm_sync)
+
+# HubSpot update
+hubspot_node = actions.http_post("update-hubspot", "https://api.hubapi.com/contacts/v1/contact/createOrUpdate/email/{{customer_email}}", {firstname: "{{customer_name}}", company: "{{company}}", last_payment: "{{amount}}"}, {authorization: "Bearer {{hubspot_key}}"})
+integration = workflow.add_node(integration, hubspot_node)
+
+# Salesforce update
+salesforce_node = actions.http_post("update-salesforce", "{{salesforce_url}}/services/data/v55.0/sobjects/Contact", {Email: "{{customer_email}}", LastName: "{{customer_name}}", Description: "Payment: {{amount}}"}, {authorization: "Bearer {{salesforce_token}}"})
+integration = workflow.add_node(integration, salesforce_node)
+
+# Step 5: Create order in database
+order_node = actions.db_insert("create-order", "orders", {customer_id: "{{customer_id}}", stripe_payment_id: "{{payment_id}}", amount: "{{amount}}", currency: "{{currency}}", status: "paid", created_at: "{{now}}"})
+order_node = nodes.with_retry(order_node, 3, 1000)
+order_node = nodes.set_next(order_node, "check-fulfillment")
+integration = workflow.add_node(integration, order_node)
+
+# Step 6: Check if auto-fulfillment is enabled
+fulfill_check = nodes.condition_node("check-fulfillment", {type: "equals", field: "auto_fulfill", value: true}, "trigger-fulfillment", "notify-team")
+integration = workflow.add_node(integration, fulfill_check)
+
+# Step 7a: Trigger fulfillment API
+fulfill_node = actions.http_post("trigger-fulfillment", "{{fulfillment_api}}/orders", {order_id: "{{order_id}}", items: "{{items}}", shipping_address: "{{shipping}}"}, {x_api_key: "{{fulfillment_key}}"})
+fulfill_node = nodes.set_next(fulfill_node, "send-confirmation")
+integration = workflow.add_node(integration, fulfill_node)
+
+# Step 7b: Notify team for manual fulfillment
+notify_team = actions.send_slack("notify-team", "#orders", "New order requires manual fulfillment:\nOrder: {{order_id}}\nCustomer: {{customer_name}}\nAmount: {{amount}} {{currency}}")
+notify_team = nodes.set_next(notify_team, "send-confirmation")
+integration = workflow.add_node(integration, notify_team)
+
+# Step 8: Send confirmation email
+confirm_email = actions.send_email("send-confirmation", "{{customer_email}}", "Order Confirmation #{{order_id}}", "Thank you for your purchase!\n\nOrder Details:\n- Amount: {{amount}} {{currency}}\n- Order ID: {{order_id}}\n\nWe will notify you when your order ships.")
+confirm_email = nodes.set_next(confirm_email, "update-analytics")
+integration = workflow.add_node(integration, confirm_email)
+
+# Step 9: Update analytics
+analytics_node = actions.http_post("update-analytics", "{{analytics_endpoint}}/events", {event: "purchase", customer_id: "{{customer_id}}", value: "{{amount}}", currency: "{{currency}}"}, {})
+analytics_node = nodes.on_error_continue(analytics_node)
+analytics_node = nodes.set_next(analytics_node, "log-complete")
+integration = workflow.add_node(integration, analytics_node)
+
+# Step 10: Log completion
+log_complete = actions.log_info("log-complete", "Order {{order_id}} processed successfully for {{customer_email}}")
+integration = workflow.add_node(integration, log_complete)
+
+emit("\nIntegration workflow configured with " + str(len(get(integration, "nodes"))) + " nodes\n")
+
+emit("\nWorkflow stages:\n")
+stage_groups = {extraction: ["validate-payload", "extract-payment", "fetch-customer"], sync: ["sync-to-crm", "update-hubspot", "update-salesforce"], fulfillment: ["create-order", "check-fulfillment", "trigger-fulfillment", "notify-team"], notification: ["send-confirmation", "update-analytics", "log-complete"]}
+
+for pair in items(stage_groups) with limit(10):
+    stage = first(pair)
+    node_list = last(pair)
+    emit("  " + upper(stage) + ":\n")
+    for node_name in node_list with limit(10):
+        emit("    - " + node_name + "\n")
+
+# Simulate workflow execution
+emit("\n--- Simulating Payment Processing ---\n")
+
+sample_payment = {event_type: "payment_intent.succeeded", customer_id: "cus_abc123", customer_email: "john@example.com", customer_name: "John Doe", amount: 9999, currency: "usd", payment_id: "pi_xyz789", auto_fulfill: true, items: [{sku: "PROD-001", qty: 2}], shipping: {city: "San Francisco", country: "US"}}
+
+emit("Received Stripe webhook:\n")
+emit("  Event: " + get(sample_payment, "event_type") + "\n")
+emit("  Customer: " + get(sample_payment, "customer_email") + "\n")
+emit("  Amount: $" + str(get(sample_payment, "amount") / 100) + " " + upper(get(sample_payment, "currency")) + "\n")
+
+integration = workflow.start_workflow(integration, sample_payment)
+
+steps = ["Validate payload", "Extract payment details", "Fetch Stripe customer", "Sync to HubSpot", "Sync to Salesforce", "Create order record", "Check fulfillment", "Trigger fulfillment API", "Send confirmation email", "Update analytics", "Log completion"]
+
+emit("\nProcessing steps:\n")
+for step in steps with limit(15):
+    emit("  [OK] " + step + "\n")
+    result = {step: step, success: true}
+    integration = workflow.advance_workflow(integration, result)
+
+integration = workflow.complete_workflow(integration)
+
+emit("\n=== Integration Complete ===\n")
+emit("Order ID: ORD-" + slice(get(sample_payment, "payment_id"), 3, 10) + "\n")
+emit("Status: " + get(integration, "status") + "\n")

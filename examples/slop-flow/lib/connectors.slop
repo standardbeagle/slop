@@ -1,0 +1,197 @@
+# =============================================================================
+# SLOP Flow - Integration Connectors
+# =============================================================================
+# Pre-configured connectors for common third-party services.
+# Connectors wrap authentication and common operations.
+# =============================================================================
+
+===SOURCE: connectors===
+id: "slop-flow/connectors@v1"
+uses: {actions: "slop-flow/actions@v1", nodes: "slop-flow/nodes@v1"}
+---
+
+# -----------------------------------------------------------------------------
+# Connector Base
+# -----------------------------------------------------------------------------
+
+def create_connector(connector_id, connector_type, auth_config):
+    return {id: connector_id, type: connector_type, auth: auth_config, status: "configured"}
+
+def with_api_key(connector_id, connector_type, api_key_header, api_key_value):
+    return create_connector(connector_id, connector_type, {type: "api_key", header: api_key_header, value: api_key_value})
+
+def with_bearer_token(connector_id, connector_type, token):
+    return create_connector(connector_id, connector_type, {type: "bearer", token: token})
+
+def with_basic_auth(connector_id, connector_type, username, password):
+    return create_connector(connector_id, connector_type, {type: "basic", username: username, password: password})
+
+def with_oauth2(connector_id, connector_type, client_id, client_secret, token_url):
+    return create_connector(connector_id, connector_type, {type: "oauth2", client_id: client_id, client_secret: client_secret, token_url: token_url})
+
+# -----------------------------------------------------------------------------
+# Slack Connector
+# -----------------------------------------------------------------------------
+
+def slack_connector(token):
+    return with_bearer_token("slack", "slack", token)
+
+def slack_post_message(node_id, channel, text):
+    return actions.send_slack(node_id, channel, text)
+
+def slack_list_channels(node_id):
+    return nodes.action_node(node_id, "slack_list_channels", {})
+
+def slack_get_user(node_id, user_id):
+    return nodes.action_node(node_id, "slack_get_user", {user_id: user_id})
+
+# -----------------------------------------------------------------------------
+# GitHub Connector
+# -----------------------------------------------------------------------------
+
+def github_connector(token):
+    return with_bearer_token("github", "github", token)
+
+def github_list_repos(node_id, org):
+    return nodes.action_node(node_id, "github_list_repos", {org: org})
+
+def github_create_issue(node_id, repo, title, body, labels):
+    return nodes.action_node(node_id, "github_create_issue", {repo: repo, title: title, body: body, labels: labels})
+
+def github_close_issue(node_id, repo, issue_number):
+    return nodes.action_node(node_id, "github_close_issue", {repo: repo, issue: issue_number})
+
+def github_create_pr(node_id, repo, title, head, base, body):
+    return nodes.action_node(node_id, "github_create_pr", {repo: repo, title: title, head: head, base: base, body: body})
+
+def github_add_comment(node_id, repo, issue_number, comment):
+    return nodes.action_node(node_id, "github_add_comment", {repo: repo, issue: issue_number, comment: comment})
+
+# -----------------------------------------------------------------------------
+# Jira Connector
+# -----------------------------------------------------------------------------
+
+def jira_connector(domain, email, api_token):
+    base_url = "https://" + domain + ".atlassian.net"
+    return merge(with_basic_auth("jira", "jira", email, api_token), {base_url: base_url})
+
+def jira_create_issue(node_id, project, issue_type, summary, description):
+    return nodes.action_node(node_id, "jira_create_issue", {project: project, type: issue_type, summary: summary, description: description})
+
+def jira_update_issue(node_id, issue_key, fields):
+    return nodes.action_node(node_id, "jira_update_issue", {issue: issue_key, fields: fields})
+
+def jira_transition_issue(node_id, issue_key, transition_id):
+    return nodes.action_node(node_id, "jira_transition", {issue: issue_key, transition: transition_id})
+
+def jira_add_comment(node_id, issue_key, comment):
+    return nodes.action_node(node_id, "jira_add_comment", {issue: issue_key, comment: comment})
+
+# -----------------------------------------------------------------------------
+# Notion Connector
+# -----------------------------------------------------------------------------
+
+def notion_connector(api_token):
+    return with_bearer_token("notion", "notion", api_token)
+
+def notion_create_page(node_id, parent_id, properties, content):
+    return nodes.action_node(node_id, "notion_create_page", {parent: parent_id, properties: properties, content: content})
+
+def notion_update_page(node_id, page_id, properties):
+    return nodes.action_node(node_id, "notion_update_page", {page: page_id, properties: properties})
+
+def notion_query_database(node_id, database_id, filter_expr, sorts):
+    return nodes.action_node(node_id, "notion_query", {database: database_id, filter: filter_expr, sorts: sorts})
+
+# -----------------------------------------------------------------------------
+# Airtable Connector
+# -----------------------------------------------------------------------------
+
+def airtable_connector(api_key):
+    return with_api_key("airtable", "airtable", "Authorization", "Bearer " + api_key)
+
+def airtable_list_records(node_id, base_id, table_name, filter_formula):
+    return nodes.action_node(node_id, "airtable_list", {base: base_id, table: table_name, filter: filter_formula})
+
+def airtable_create_record(node_id, base_id, table_name, fields):
+    return nodes.action_node(node_id, "airtable_create", {base: base_id, table: table_name, fields: fields})
+
+def airtable_update_record(node_id, base_id, table_name, record_id, fields):
+    return nodes.action_node(node_id, "airtable_update", {base: base_id, table: table_name, record: record_id, fields: fields})
+
+# -----------------------------------------------------------------------------
+# Stripe Connector
+# -----------------------------------------------------------------------------
+
+def stripe_connector(secret_key):
+    return with_bearer_token("stripe", "stripe", secret_key)
+
+def stripe_create_customer(node_id, email, name, metadata):
+    return nodes.action_node(node_id, "stripe_create_customer", {email: email, name: name, metadata: metadata})
+
+def stripe_create_charge(node_id, amount, currency, customer_id, description):
+    return nodes.action_node(node_id, "stripe_create_charge", {amount: amount, currency: currency, customer: customer_id, description: description})
+
+def stripe_create_subscription(node_id, customer_id, price_id):
+    return nodes.action_node(node_id, "stripe_create_subscription", {customer: customer_id, price: price_id})
+
+# -----------------------------------------------------------------------------
+# Twilio Connector
+# -----------------------------------------------------------------------------
+
+def twilio_connector(account_sid, auth_token):
+    return with_basic_auth("twilio", "twilio", account_sid, auth_token)
+
+def twilio_send_sms(node_id, from_number, to_number, message):
+    return nodes.action_node(node_id, "twilio_sms", {from: from_number, to: to_number, body: message})
+
+def twilio_make_call(node_id, from_number, to_number, twiml_url):
+    return nodes.action_node(node_id, "twilio_call", {from: from_number, to: to_number, url: twiml_url})
+
+# -----------------------------------------------------------------------------
+# SendGrid Connector
+# -----------------------------------------------------------------------------
+
+def sendgrid_connector(api_key):
+    return with_api_key("sendgrid", "sendgrid", "Authorization", "Bearer " + api_key)
+
+def sendgrid_send_email(node_id, from_email, to_email, subject, content):
+    return nodes.action_node(node_id, "sendgrid_send", {from: from_email, to: to_email, subject: subject, content: content})
+
+def sendgrid_send_template(node_id, from_email, to_email, template_id, dynamic_data):
+    return nodes.action_node(node_id, "sendgrid_template", {from: from_email, to: to_email, template: template_id, data: dynamic_data})
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Connector
+# -----------------------------------------------------------------------------
+
+def postgres_connector(connection_string):
+    return create_connector("postgres", "postgres", {connection_string: connection_string})
+
+def postgres_query(node_id, query, params):
+    return actions.db_query(node_id, query, params)
+
+def postgres_insert(node_id, table, data):
+    return actions.db_insert(node_id, table, data)
+
+def postgres_update(node_id, table, data, where_clause):
+    return actions.db_update(node_id, table, data, where_clause)
+
+# -----------------------------------------------------------------------------
+# Redis Connector
+# -----------------------------------------------------------------------------
+
+def redis_connector(connection_url):
+    return create_connector("redis", "redis", {url: connection_url})
+
+def redis_get(node_id, key):
+    return nodes.action_node(node_id, "redis_get", {key: key})
+
+def redis_set(node_id, key, value, ttl_seconds):
+    return nodes.action_node(node_id, "redis_set", {key: key, value: value, ttl: ttl_seconds})
+
+def redis_delete(node_id, key):
+    return nodes.action_node(node_id, "redis_delete", {key: key})
+
+def redis_publish(node_id, channel, message):
+    return nodes.action_node(node_id, "redis_publish", {channel: channel, message: message})
