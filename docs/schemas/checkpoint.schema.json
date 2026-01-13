@@ -1,0 +1,522 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/standardbeagle/slop/schemas/checkpoint.schema.json",
+  "title": "SLOP Checkpoint",
+  "description": "Schema for SLOP execution state checkpoints, enabling pause/resume and edit-continue functionality",
+  "type": "object",
+  "required": ["version", "script_hash", "position", "context", "created_at"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version for compatibility checking",
+      "pattern": "^\\d+\\.\\d+$",
+      "examples": ["1.0"]
+    },
+    "script_hash": {
+      "type": "string",
+      "description": "SHA256 hash of the original script for edit-continue detection",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "script_path": {
+      "type": "string",
+      "description": "Original path to the script file (optional)"
+    },
+    "position": {
+      "$ref": "#/$defs/Position",
+      "description": "Statement position where execution paused"
+    },
+    "context": {
+      "$ref": "#/$defs/SerializedContext",
+      "description": "Full execution context state"
+    },
+    "service_refs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ServiceRef" },
+      "description": "Service connection parameters for reconnection"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of checkpoint creation"
+    },
+    "checkpoint_name": {
+      "type": "string",
+      "description": "Optional user-provided name for this checkpoint"
+    },
+    "checkpoint_message": {
+      "type": "string",
+      "description": "Optional message from pause statement"
+    }
+  },
+
+  "$defs": {
+    "Position": {
+      "type": "object",
+      "required": ["line", "column"],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line number (1-indexed)"
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Column number (1-indexed)"
+        },
+        "statement_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index of the statement in the program"
+        }
+      }
+    },
+
+    "SerializedContext": {
+      "type": "object",
+      "required": ["scopes", "limits", "emitted", "control_flow"],
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SerializedScope" },
+          "description": "Flattened scope chain (first is global, last is current)"
+        },
+        "current_scope_id": {
+          "type": "string",
+          "description": "ID of the current scope"
+        },
+        "limits": {
+          "$ref": "#/$defs/ExecutionLimits"
+        },
+        "tx_log": {
+          "$ref": "#/$defs/TransactionLog"
+        },
+        "emitted": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SerializedValue" },
+          "description": "Values emitted via emit()"
+        },
+        "control_flow": {
+          "$ref": "#/$defs/ControlFlowState"
+        }
+      }
+    },
+
+    "SerializedScope": {
+      "type": "object",
+      "required": ["id", "variables"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for this scope"
+        },
+        "parent_id": {
+          "type": ["string", "null"],
+          "description": "Parent scope ID (null for global scope)"
+        },
+        "variables": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/SerializedValue" },
+          "description": "Variable name to value mapping"
+        },
+        "is_global": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this is the global scope"
+        }
+      }
+    },
+
+    "SerializedValue": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "none",
+            "bool",
+            "int",
+            "float",
+            "string",
+            "list",
+            "map",
+            "set",
+            "function",
+            "lambda",
+            "builtin",
+            "service",
+            "error",
+            "iterator"
+          ],
+          "description": "The value type"
+        },
+        "data": {
+          "description": "Type-specific data payload"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "none" } } },
+          "then": { "properties": { "data": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "bool" } } },
+          "then": { "properties": { "data": { "type": "boolean" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "int" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "string",
+                "pattern": "^-?\\d+$",
+                "description": "String representation to preserve int64 precision"
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "float" } } },
+          "then": { "properties": { "data": { "type": "number" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "string" } } },
+          "then": { "properties": { "data": { "type": "string" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "list" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/SerializedValue" }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "map" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/SerializedMap"
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "set" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/SerializedValue" },
+                "description": "Set elements as array"
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "function" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/FunctionRef" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "lambda" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/LambdaRef" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "builtin" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "string",
+                "description": "Built-in function name"
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "service" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "string",
+                "description": "Service name"
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "error" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/SerializedError" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "iterator" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/SerializedIterator" }
+            }
+          }
+        }
+      ]
+    },
+
+    "SerializedMap": {
+      "type": "object",
+      "required": ["pairs", "order"],
+      "properties": {
+        "pairs": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/SerializedValue" },
+          "description": "Key-value pairs"
+        },
+        "order": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Key insertion order for deterministic iteration"
+        }
+      }
+    },
+
+    "FunctionRef": {
+      "type": "object",
+      "required": ["name", "position"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Function name"
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "Position of function definition in script"
+        },
+        "closure_scope_id": {
+          "type": ["string", "null"],
+          "description": "ID of the closure scope (for captured variables)"
+        },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ParameterDef" },
+          "description": "Parameter definitions"
+        }
+      }
+    },
+
+    "ParameterDef": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "has_default": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_variadic": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_kwargs": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+
+    "LambdaRef": {
+      "type": "object",
+      "required": ["position"],
+      "properties": {
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "Position of lambda definition in script"
+        },
+        "closure_scope_id": {
+          "type": ["string", "null"],
+          "description": "ID of the closure scope"
+        },
+        "parameter_names": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Lambda parameter names"
+        }
+      }
+    },
+
+    "SerializedError": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/SerializedValue",
+          "description": "Associated error data (optional)"
+        }
+      }
+    },
+
+    "SerializedIterator": {
+      "type": "object",
+      "required": ["iter_type", "current"],
+      "properties": {
+        "iter_type": {
+          "type": "string",
+          "enum": ["range", "list"],
+          "description": "Type of iterator"
+        },
+        "current": {
+          "type": "integer",
+          "description": "Current position"
+        },
+        "end": {
+          "type": "integer",
+          "description": "End value (for range)"
+        },
+        "step": {
+          "type": "integer",
+          "description": "Step value (for range)"
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SerializedValue" },
+          "description": "Items (for list iterator)"
+        }
+      }
+    },
+
+    "ExecutionLimits": {
+      "type": "object",
+      "properties": {
+        "max_iterations": { "type": "integer", "minimum": 0 },
+        "max_llm_calls": { "type": "integer", "minimum": 0 },
+        "max_api_calls": { "type": "integer", "minimum": 0 },
+        "max_duration": { "type": "integer", "minimum": 0, "description": "Max duration in seconds" },
+        "max_cost": { "type": "number", "minimum": 0, "description": "Max cost in dollars" },
+        "iteration_count": { "type": "integer", "minimum": 0 },
+        "llm_call_count": { "type": "integer", "minimum": 0 },
+        "api_call_count": { "type": "integer", "minimum": 0 },
+        "start_time": { "type": "integer", "description": "Unix timestamp of start" },
+        "total_cost": { "type": "number", "minimum": 0 }
+      }
+    },
+
+    "TransactionLog": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SerializedOperation" }
+        },
+        "next_id": {
+          "type": "integer",
+          "description": "Next operation ID to assign"
+        }
+      }
+    },
+
+    "SerializedOperation": {
+      "type": "object",
+      "required": ["id", "timestamp", "type", "service", "method"],
+      "properties": {
+        "id": { "type": "integer" },
+        "timestamp": { "type": "integer", "description": "Unix timestamp" },
+        "type": {
+          "type": "string",
+          "enum": ["call", "write", "delete", "update"]
+        },
+        "service": { "type": "string" },
+        "method": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SerializedValue" }
+        },
+        "kwargs": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/SerializedValue" }
+        },
+        "result": { "$ref": "#/$defs/SerializedValue" },
+        "error": {
+          "type": ["string", "null"],
+          "description": "Error message if operation failed"
+        },
+        "reversible": { "type": "boolean" },
+        "undo_method": { "type": "string" },
+        "undo_data": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/SerializedValue" }
+        }
+      }
+    },
+
+    "ControlFlowState": {
+      "type": "object",
+      "properties": {
+        "return_value": {
+          "$ref": "#/$defs/SerializedValue",
+          "description": "Pending return value (if any)"
+        },
+        "should_return": { "type": "boolean", "default": false },
+        "should_break": { "type": "boolean", "default": false },
+        "should_continue": { "type": "boolean", "default": false },
+        "should_stop": { "type": "boolean", "default": false },
+        "rollback": { "type": "boolean", "default": false }
+      }
+    },
+
+    "ServiceRef": {
+      "type": "object",
+      "required": ["name", "transport"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Service name as used in scripts"
+        },
+        "transport": {
+          "type": "string",
+          "enum": ["command", "sse", "streamable"],
+          "description": "MCP transport type"
+        },
+        "command": {
+          "type": "string",
+          "description": "Command for command transport"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Command arguments"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL for HTTP transports"
+        },
+        "env_keys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required environment variable names"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "HTTP headers for HTTP transports"
+        }
+      }
+    }
+  }
+}
