@@ -647,3 +647,59 @@ count`
 		assert.Equal(t, "at count 3", e.ctx.GetPauseMessage())
 	})
 }
+
+func TestEvalHyphenatedIdentifiers(t *testing.T) {
+	t.Run("hyphenated name in scope resolves directly", func(t *testing.T) {
+		input := "dart-query = 42\ndart-query"
+		result := testEval(t, input)
+		iv, ok := result.(*IntValue)
+		require.True(t, ok, "expected IntValue, got %T", result)
+		assert.Equal(t, int64(42), iv.Value)
+	})
+
+	t.Run("subtraction fallback when parts are in scope", func(t *testing.T) {
+		input := "a = 10\nb = 3\na-b"
+		result := testEval(t, input)
+		iv, ok := result.(*IntValue)
+		require.True(t, ok, "expected IntValue, got %T", result)
+		assert.Equal(t, int64(7), iv.Value)
+	})
+
+	t.Run("chained subtraction fallback", func(t *testing.T) {
+		input := "a = 10\nb = 3\nc = 2\na-b-c"
+		result := testEval(t, input)
+		iv, ok := result.(*IntValue)
+		require.True(t, ok, "expected IntValue, got %T", result)
+		assert.Equal(t, int64(5), iv.Value)
+	})
+
+	t.Run("undefined part gives error with full name", func(t *testing.T) {
+		input := "a = 10\na-b"
+		l := lexer.New(input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors())
+
+		e := New()
+		_, err := e.Eval(program)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "undefined variable: a-b")
+	})
+
+	t.Run("hyphenated name takes priority over subtraction", func(t *testing.T) {
+		// When the full hyphenated name is in scope, use it even if parts exist too
+		input := "a = 10\nb = 3\na-b = 99\na-b"
+		result := testEval(t, input)
+		iv, ok := result.(*IntValue)
+		require.True(t, ok, "expected IntValue, got %T", result)
+		assert.Equal(t, int64(99), iv.Value)
+	})
+
+	t.Run("spaced subtraction still works", func(t *testing.T) {
+		input := "a = 10\nb = 3\na - b"
+		result := testEval(t, input)
+		iv, ok := result.(*IntValue)
+		require.True(t, ok, "expected IntValue, got %T", result)
+		assert.Equal(t, int64(7), iv.Value)
+	})
+}

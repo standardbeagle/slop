@@ -567,6 +567,122 @@ func TestLookupIdent(t *testing.T) {
 	}
 }
 
+func TestNextToken_HyphenatedIdentifiers(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []struct {
+			typ TokenType
+			lit string
+		}
+	}{
+		{
+			"dart-query",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "dart-query"},
+			},
+		},
+		{
+			"my-mcp-server",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "my-mcp-server"},
+			},
+		},
+		{
+			"a-1",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "a"},
+				{MINUS, "-"},
+				{INT, "1"},
+			},
+		},
+		{
+			"a - b",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "a"},
+				{MINUS, "-"},
+				{IDENT, "b"},
+			},
+		},
+		{
+			"dart-query.search",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "dart-query"},
+				{DOT, "."},
+				{IDENT, "search"},
+			},
+		},
+		{
+			"true-false",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{TRUE, "true"},
+				{MINUS, "-"},
+				{FALSE, "false"},
+			},
+		},
+		{
+			"for-x",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{FOR, "for"},
+				{MINUS, "-"},
+				{IDENT, "x"},
+			},
+		},
+		{
+			"x->y",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "x"},
+				{ARROW, "->"},
+				{IDENT, "y"},
+			},
+		},
+		{
+			"a-",
+			[]struct {
+				typ TokenType
+				lit string
+			}{
+				{IDENT, "a"},
+				{MINUS, "-"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			l := New(tt.input)
+			for i, exp := range tt.expected {
+				tok := l.NextToken()
+				assert.Equal(t, exp.typ, tok.Type, "test[%d] type for input %q", i, tt.input)
+				assert.Equal(t, exp.lit, tok.Literal, "test[%d] literal for input %q", i, tt.input)
+			}
+		})
+	}
+}
+
 func TestTokenType_String(t *testing.T) {
 	assert.Equal(t, "if", IF.String())
 	assert.Equal(t, "+", PLUS.String())
