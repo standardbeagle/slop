@@ -175,9 +175,11 @@ func (f *FunctionValue) IsTruthy() bool { return true }
 
 // LambdaValue represents a lambda function.
 type LambdaValue struct {
-	Parameters []*ast.Identifier
-	Body       ast.Expression
-	Env        *Scope
+	Parameters  []*ast.Identifier
+	Body        ast.Expression
+	Env         *Scope
+	TokenLine   int // source position for checkpoint round-trip
+	TokenColumn int
 }
 
 func (l *LambdaValue) Type() string   { return "lambda" }

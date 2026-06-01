@@ -3,6 +3,9 @@ package evaluator
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/standardbeagle/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/parser"
 )
 
 func TestDeserializeValue_Primitives(t *testing.T) {
@@ -884,5 +887,90 @@ func TestRoundTrip_Checkpoint(t *testing.T) {
 	}
 	if i, ok := xVal.(*IntValue); !ok || i.Value != 42 {
 		t.Errorf("x = %v, want 42", xVal)
+	}
+}
+
+// TestRoundTrip_LambdaBody verifies that a lambda stored in scope survives a
+// serialize → deserialize round-trip with its Body intact (non-nil) so the
+// restored closure can be called and produces the correct result.
+//
+// Regression: serializeLambda never set ref.Position, so the deserializer
+// could not look up the AST node → Body was always nil after restore.
+func TestRoundTrip_LambdaBody(t *testing.T) {
+	// Parse a script that defines a lambda and stores it in a variable.
+	script := `double = x -> x * 2
+pause "checkpoint"`
+
+	l := lexer.New(script)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	if errs := p.Errors(); len(errs) != 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+
+	// Evaluate until pause so the lambda is live in scope.
+	e := New()
+	_, err := e.Eval(program)
+	if err != nil {
+		t.Fatalf("Eval() error = %v", err)
+	}
+	if !e.ctx.ShouldPause() {
+		t.Fatal("expected pause, evaluator did not pause")
+	}
+
+	// Retrieve the live lambda to confirm it has a Body before serialization.
+	doubleVal, ok := e.ctx.Scope.Get("double")
+	if !ok {
+		t.Fatal("variable 'double' not found before serialize")
+	}
+	liveLambda, ok := doubleVal.(*LambdaValue)
+	if !ok {
+		t.Fatalf("'double' is %T, want *LambdaValue", doubleVal)
+	}
+	if liveLambda.Body == nil {
+		t.Fatal("live lambda Body is nil before serialize — test precondition broken")
+	}
+
+	// Serialize the context (program AST passed so positions are embedded).
+	s := NewSerializer(program)
+	sc, err := s.SerializeContext(e.ctx)
+	if err != nil {
+		t.Fatalf("SerializeContext() error = %v", err)
+	}
+
+	// Deserialize — pass the same program so lambdaExprs index is populated.
+	d := NewDeserializer(program, nil, nil)
+	restoredCtx, err := d.DeserializeContext(sc)
+	if err != nil {
+		t.Fatalf("DeserializeContext() error = %v", err)
+	}
+
+	// Retrieve the restored lambda.
+	restoredVal, ok := restoredCtx.Scope.Get("double")
+	if !ok {
+		t.Fatal("variable 'double' not found after deserialize")
+	}
+	restoredLambda, ok := restoredVal.(*LambdaValue)
+	if !ok {
+		t.Fatalf("restored 'double' is %T, want *LambdaValue", restoredVal)
+	}
+
+	// Body must be non-nil — the central bug being fixed.
+	if restoredLambda.Body == nil {
+		t.Fatal("restored lambda Body is nil — position was not serialized correctly")
+	}
+
+	// Call the restored lambda with argument 7, expect 14.
+	eval2 := NewWithContext(restoredCtx)
+	result, err := eval2.callLambda(restoredLambda, []Value{&IntValue{Value: 7}})
+	if err != nil {
+		t.Fatalf("callLambda() error = %v", err)
+	}
+	intResult, ok := result.(*IntValue)
+	if !ok {
+		t.Fatalf("callLambda() returned %T, want *IntValue", result)
+	}
+	if intResult.Value != 14 {
+		t.Errorf("double(7) = %d, want 14", intResult.Value)
 	}
 }

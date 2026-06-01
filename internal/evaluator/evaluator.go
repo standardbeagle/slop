@@ -1140,9 +1140,11 @@ func (b *BoundMethodValue) IsTruthy() bool { return true }
 
 func (e *Evaluator) evalLambdaExpression(node *ast.LambdaExpression) (Value, error) {
 	return &LambdaValue{
-		Parameters: node.Parameters,
-		Body:       node.Body,
-		Env:        e.ctx.Scope,
+		Parameters:  node.Parameters,
+		Body:        node.Body,
+		Env:         e.ctx.Scope,
+		TokenLine:   node.Token.Line,
+		TokenColumn: node.Token.Column,
 	}, nil
 }
 

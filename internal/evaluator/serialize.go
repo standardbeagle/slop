@@ -336,6 +336,14 @@ func (s *Serializer) serializeFunction(f *FunctionValue) (*SerializedValue, erro
 func (s *Serializer) serializeLambda(l *LambdaValue) (*SerializedValue, error) {
 	ref := LambdaRef{}
 
+	// Emit position so the deserializer can look up the AST node by key "line:column".
+	if l.TokenLine > 0 {
+		ref.Position = &Position{
+			Line:   l.TokenLine,
+			Column: l.TokenColumn,
+		}
+	}
+
 	// Reference closure scope
 	if l.Env != nil {
 		scopeID := s.getScopeID(l.Env)
