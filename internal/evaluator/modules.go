@@ -235,28 +235,27 @@ func (r *ModuleResolver) BuildScopes(e *Evaluator) error {
 			}
 		}
 
-		// Evaluate module body to populate scope
+		// Evaluate module body to populate scope. Use withContext so both
+		// e.ctx and e.frame are temporarily replaced; this ensures that
+		// identifier lookups inside the module body use the module scope.
 		moduleCtx := NewContext()
 		moduleCtx.Scope = scope
 
-		// Save original context and set module context
-		origCtx := e.ctx
-		e.ctx = moduleCtx
-
-		// Evaluate each statement in the module body
-		for _, stmt := range mod.Body {
-			_, err := e.Eval(stmt)
-			if err != nil {
-				e.ctx = origCtx
-				return &ModuleError{
-					Module:  mod.Name,
-					Message: fmt.Sprintf("error evaluating: %v", err),
+		var evalErr error
+		e.withContext(moduleCtx, func() {
+			for _, stmt := range mod.Body {
+				_, evalErr = e.Eval(stmt)
+				if evalErr != nil {
+					return
 				}
 			}
+		})
+		if evalErr != nil {
+			return &ModuleError{
+				Module:  mod.Name,
+				Message: fmt.Sprintf("error evaluating: %v", evalErr),
+			}
 		}
-
-		// Restore original context
-		e.ctx = origCtx
 
 		// Store the scope
 		if mod.ID != "" {

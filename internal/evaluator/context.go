@@ -81,9 +81,51 @@ func (s *Scope) Has(name string) bool {
 	return ok
 }
 
+// evalFrame holds the per-call-frame mutable state for a single evaluation
+// context: the active scope and all control-flow signals. Each user-function or
+// lambda invocation gets its own evalFrame so concurrent goroutines (e.g. a
+// future parallel(N) implementation) cannot interfere with each other's
+// shouldReturn/shouldBreak flags or scope pointer.
+//
+// evalFrame is intentionally a value type: callers copy it or create a new one
+// via newEvalFrame/childEvalFrame. The shared, concurrency-safe state (globals,
+// services, limits, txlog) lives in Context.
+type evalFrame struct {
+	// Active variable scope for this call frame.
+	Scope *Scope
+
+	// Control-flow signals — private to this frame.
+	returnValue    Value
+	shouldReturn   bool
+	shouldBreak    bool
+	shouldContinue bool
+	shouldStop     bool
+	rollback       bool
+
+	// Pause state for checkpointing.
+	shouldPause  bool
+	pauseMessage string
+}
+
+// newEvalFrame creates a root evalFrame with the given scope.
+func newEvalFrame(scope *Scope) *evalFrame {
+	return &evalFrame{Scope: scope}
+}
+
+// childEvalFrame creates a fresh evalFrame for a function call. It shares no
+// control-flow state with the parent — each call sees a clean slate. The new
+// scope is set by the caller after creation.
+func childEvalFrame(scope *Scope) *evalFrame {
+	return &evalFrame{Scope: scope}
+}
+
 // Context holds the execution context for the evaluator.
 type Context struct {
-	// Current scope
+	// Current scope — kept for backward compatibility with serialize/deserialize
+	// and top-level checkpoint restore. During evaluation the active scope lives
+	// in the evalFrame; this field reflects the scope at the *start* of top-level
+	// evaluation only. It is not read or written by concurrent goroutines once
+	// evaluation begins.
 	Scope *Scope
 
 	// Global scope for built-ins and services
@@ -98,10 +140,12 @@ type Context struct {
 	// Transaction log for rollback
 	TxLog *TransactionLog
 
-	// Emitted values
+	// Emitted values — protected by emitMu when accessed from goroutines.
 	Emitted []Value
+	emitMu  sync.Mutex
 
-	// Control flow flags
+	// Control flow flags — kept for serialize/deserialize and checkpoint restore.
+	// During evaluation these are NOT used; evalFrame carries the live state.
 	returnValue    Value
 	shouldReturn   bool
 	shouldBreak    bool
@@ -109,9 +153,9 @@ type Context struct {
 	shouldStop     bool
 	rollback       bool
 
-	// Pause state for checkpointing
-	shouldPause   bool
-	pauseMessage  string
+	// Pause state for checkpointing — same note as above.
+	shouldPause  bool
+	pauseMessage string
 }
 
 // DefaultMaxCallDepth bounds recursion when no explicit MaxCallDepth is set.
@@ -300,6 +344,68 @@ type ReversibleService interface {
 	IsReversible(method string) bool
 }
 
+// ---- evalFrame control-flow accessors ----
+
+func (f *evalFrame) SetReturn(value Value) {
+	f.returnValue = value
+	f.shouldReturn = true
+}
+
+func (f *evalFrame) GetReturn() (Value, bool) {
+	if f.shouldReturn {
+		val := f.returnValue
+		f.returnValue = nil
+		f.shouldReturn = false
+		return val, true
+	}
+	return nil, false
+}
+
+func (f *evalFrame) ShouldReturn() bool   { return f.shouldReturn }
+func (f *evalFrame) SetBreak()            { f.shouldBreak = true }
+func (f *evalFrame) ClearBreak()          { f.shouldBreak = false }
+func (f *evalFrame) ShouldBreak() bool    { return f.shouldBreak }
+func (f *evalFrame) SetContinue()         { f.shouldContinue = true }
+func (f *evalFrame) ClearContinue()       { f.shouldContinue = false }
+func (f *evalFrame) ShouldContinue() bool { return f.shouldContinue }
+
+func (f *evalFrame) SetStop(rollback bool) {
+	f.shouldStop = true
+	f.rollback = rollback
+}
+
+func (f *evalFrame) ShouldStop() bool    { return f.shouldStop }
+func (f *evalFrame) NeedsRollback() bool { return f.rollback }
+
+func (f *evalFrame) SetPause(message string) {
+	f.shouldPause = true
+	f.pauseMessage = message
+}
+
+func (f *evalFrame) ClearPause() {
+	f.shouldPause = false
+	f.pauseMessage = ""
+}
+
+func (f *evalFrame) ShouldPause() bool    { return f.shouldPause }
+func (f *evalFrame) GetPauseMessage() string { return f.pauseMessage }
+
+func (f *evalFrame) ShouldInterrupt() bool {
+	return f.shouldStop || f.shouldReturn || f.shouldBreak || f.shouldContinue || f.shouldPause
+}
+
+// PushScope creates a new child scope and makes it current in this frame.
+func (f *evalFrame) PushScope() {
+	f.Scope = NewEnclosedScope(f.Scope)
+}
+
+// PopScope returns to the parent scope in this frame.
+func (f *evalFrame) PopScope() {
+	if f.Scope.parent != nil {
+		f.Scope = f.Scope.parent
+	}
+}
+
 // NewContext creates a new execution context.
 func NewContext() *Context {
 	globals := NewScope()
@@ -349,9 +455,11 @@ func (c *Context) RegisterBuiltin(name string, fn BuiltinFunction) {
 	c.Globals.Set(name, &BuiltinValue{Name: name, Fn: fn})
 }
 
-// Emit records an emitted value.
+// Emit records an emitted value. Safe for concurrent goroutines.
 func (c *Context) Emit(value Value) {
+	c.emitMu.Lock()
 	c.Emitted = append(c.Emitted, value)
+	c.emitMu.Unlock()
 }
 
 // SetReturn sets the return value and flags return.

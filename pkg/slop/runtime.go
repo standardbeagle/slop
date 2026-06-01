@@ -334,80 +334,9 @@ type pipelineCaller struct {
 	eval *evaluator.Evaluator
 }
 
-// CallFunction calls a user-defined function with the given arguments.
+// CallFunction calls a callable value with the given arguments. It delegates
+// to the evaluator's InvokeFunction so all calls go through the proper
+// per-frame scope isolation machinery.
 func (p *pipelineCaller) CallFunction(fn evaluator.Value, args []evaluator.Value) (evaluator.Value, error) {
-	switch f := fn.(type) {
-	case *evaluator.FunctionValue:
-		return p.callUserFunction(f, args)
-	case *evaluator.LambdaValue:
-		return p.callLambda(f, args)
-	case *evaluator.BuiltinValue:
-		return f.Fn(args, nil)
-	default:
-		return nil, nil
-	}
-}
-
-func (p *pipelineCaller) callUserFunction(fn *evaluator.FunctionValue, args []evaluator.Value) (evaluator.Value, error) {
-	// Create new scope for function execution
-	fnScope := evaluator.NewEnclosedScope(fn.Env)
-
-	// Bind parameters
-	for i, param := range fn.Parameters {
-		var val evaluator.Value
-		if i < len(args) {
-			val = args[i]
-		} else if param.Default != nil {
-			var err error
-			val, err = p.eval.Eval(param.Default)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, nil // Missing argument
-		}
-		fnScope.Set(param.Name.Value, val)
-	}
-
-	// Execute function body
-	ctx := p.eval.Context()
-	oldScope := ctx.Scope
-	ctx.Scope = fnScope
-	defer func() {
-		ctx.Scope = oldScope
-	}()
-
-	result, err := p.eval.Eval(fn.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check for return value
-	if retVal, ok := ctx.GetReturn(); ok {
-		return retVal, nil
-	}
-
-	return result, nil
-}
-
-func (p *pipelineCaller) callLambda(fn *evaluator.LambdaValue, args []evaluator.Value) (evaluator.Value, error) {
-	// Create new scope
-	fnScope := evaluator.NewEnclosedScope(fn.Env)
-
-	// Bind parameters
-	for i, param := range fn.Parameters {
-		if i < len(args) {
-			fnScope.Set(param.Value, args[i])
-		}
-	}
-
-	// Execute body
-	ctx := p.eval.Context()
-	oldScope := ctx.Scope
-	ctx.Scope = fnScope
-	defer func() {
-		ctx.Scope = oldScope
-	}()
-
-	return p.eval.Eval(fn.Body)
+	return p.eval.InvokeFunction(fn, args)
 }

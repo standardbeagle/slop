@@ -336,9 +336,13 @@ func (re *ResumableEvaluator) ResumeFromCheckpoint(checkpointPath string, builti
 		return nil, "", err
 	}
 
-	// Replace evaluator context
+	// Replace evaluator context and reset the frame to use the restored scope.
+	// The frame carries the live scope pointer and control-flow flags; both must
+	// be reseated to the newly loaded context so resumed evaluation uses the
+	// correct variable bindings and starts with a clean pause/stop state.
 	re.ctx = ctx
-	re.ctx.ClearPause() // Clear pause flag to continue execution
+	re.frame = newEvalFrame(ctx.Scope)
+	re.ctx.ClearPause() // Clear ctx-level pause flag (checkpoint serialization side)
 
 	// Update position
 	re.currentPos = checkpoint.Position
@@ -393,12 +397,13 @@ func (re *ResumableEvaluator) resumeExecution(program *ast.Program, startIndex i
 		}
 		result = val
 
-		// Check for control flow
-		if re.ctx.ShouldReturn() {
-			result, _ = re.ctx.GetReturn()
+		// Check for control flow using frame-aware accessors so we read the
+		// live state rather than a potentially-stale ctx mirror.
+		if re.FrameShouldReturn() {
+			result, _ = re.FrameGetReturn()
 			break
 		}
-		if re.ctx.ShouldStop() || re.ctx.ShouldPause() {
+		if re.FrameShouldStop() || re.FrameShouldPause() {
 			break
 		}
 	}

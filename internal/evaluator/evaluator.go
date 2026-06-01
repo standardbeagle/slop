@@ -11,21 +11,32 @@ import (
 )
 
 // Evaluator is a tree-walking interpreter for SLOP.
+//
+// Goroutine safety: the shared Context (globals, services, limits, txlog) is
+// safe for concurrent reads. Emitted values are protected by emitMu. Each
+// Evaluator instance owns exactly one evalFrame which holds the mutable
+// per-call state (active Scope + control-flow flags). User-function and lambda
+// calls create a fresh child Evaluator with its own frame, so parallel
+// goroutines never share control-flow state or scope pointers.
 type Evaluator struct {
-	ctx *Context
+	ctx   *Context
+	frame *evalFrame
 }
 
 // New creates a new Evaluator with a fresh context.
 func New() *Evaluator {
+	ctx := NewContext()
 	return &Evaluator{
-		ctx: NewContext(),
+		ctx:   ctx,
+		frame: newEvalFrame(ctx.Scope),
 	}
 }
 
 // NewWithContext creates an Evaluator with the given context.
 func NewWithContext(ctx *Context) *Evaluator {
 	return &Evaluator{
-		ctx: ctx,
+		ctx:   ctx,
+		frame: newEvalFrame(ctx.Scope),
 	}
 }
 
@@ -34,14 +45,90 @@ func (e *Evaluator) Context() *Context {
 	return e.ctx
 }
 
+// childEval creates a child evaluator for a function call. The child shares the
+// same Context (globals, services, limits) but gets its own evalFrame with the
+// supplied scope, so control-flow signals are isolated per invocation.
+func (e *Evaluator) childEval(scope *Scope) *Evaluator {
+	return &Evaluator{
+		ctx:   e.ctx,
+		frame: childEvalFrame(scope),
+	}
+}
+
+// withContext temporarily replaces this evaluator's context and frame, invokes
+// fn, then restores the originals. Used by module loading (BuildScopes) which
+// needs to evaluate module bodies in a separate context.
+// Returns the saved (ctx, frame) so the caller can observe post-eval state if needed.
+func (e *Evaluator) withContext(ctx *Context, fn func()) {
+	origCtx := e.ctx
+	origFrame := e.frame
+	e.ctx = ctx
+	e.frame = newEvalFrame(ctx.Scope)
+	fn()
+	e.ctx = origCtx
+	e.frame = origFrame
+}
+
 // Eval evaluates an AST node and returns the result.
 // This is the main entry point for the interpreter. It dispatches to the
 // appropriate evaluation method based on the node type.
+//
+// After evaluation completes, the frame's control-flow state is synced back
+// to Context so that callers inspecting ctx.ShouldPause(), ctx.ShouldStop(),
+// etc. see the correct state — this is required for checkpointing and for
+// external callers that query the context after a top-level Eval call.
 func (e *Evaluator) Eval(node ast.Node) (Value, error) {
 	if node == nil {
 		return nil, nil
 	}
-	return evalNode(e, node)
+	result, err := evalNode(e, node)
+	// Sync per-frame control-flow state to Context so external observers
+	// (checkpoint, tests, runtime) see consistent state.
+	e.syncFrameToCtx()
+	return result, err
+}
+
+// syncFrameToCtx copies the current frame's control-flow flags into the shared
+// Context. This is called after every top-level Eval so that code that inspects
+// ctx.ShouldPause() / ctx.ShouldStop() etc. sees the live state.
+func (e *Evaluator) syncFrameToCtx() {
+	e.ctx.shouldPause = e.frame.shouldPause
+	e.ctx.pauseMessage = e.frame.pauseMessage
+	e.ctx.shouldStop = e.frame.shouldStop
+	e.ctx.rollback = e.frame.rollback
+	e.ctx.shouldReturn = e.frame.shouldReturn
+	e.ctx.returnValue = e.frame.returnValue
+	e.ctx.shouldBreak = e.frame.shouldBreak
+	e.ctx.shouldContinue = e.frame.shouldContinue
+	// Keep ctx.Scope in sync for checkpoint serialization.
+	e.ctx.Scope = e.frame.Scope
+}
+
+// FrameShouldReturn reports whether the active frame has a pending return.
+func (e *Evaluator) FrameShouldReturn() bool { return e.frame.shouldReturn }
+
+// FrameGetReturn consumes the pending return value from the active frame,
+// clearing both the frame and ctx state atomically.
+func (e *Evaluator) FrameGetReturn() (Value, bool) {
+	val, ok := e.frame.GetReturn()
+	if ok {
+		// Also clear the ctx mirror so observers don't see stale state.
+		e.ctx.shouldReturn = false
+		e.ctx.returnValue = nil
+	}
+	return val, ok
+}
+
+// FrameShouldStop reports whether the active frame has a stop signal.
+func (e *Evaluator) FrameShouldStop() bool { return e.frame.shouldStop }
+
+// FrameShouldPause reports whether the active frame has a pause signal.
+func (e *Evaluator) FrameShouldPause() bool { return e.frame.shouldPause }
+
+// FrameClearPause clears the pause signal on both frame and ctx.
+func (e *Evaluator) FrameClearPause() {
+	e.frame.ClearPause()
+	e.ctx.ClearPause()
 }
 
 // evalNode dispatches to specific evaluation functions based on node type.
@@ -64,10 +151,10 @@ func evalNode(e *Evaluator, node ast.Node) (Value, error) {
 	case *ast.TryStatement:
 		return e.evalTryStatement(node)
 	case *ast.BreakStatement:
-		e.ctx.SetBreak()
+		e.frame.SetBreak()
 		return NONE, nil
 	case *ast.ContinueStatement:
-		e.ctx.SetContinue()
+		e.frame.SetContinue()
 		return NONE, nil
 	case *ast.PauseStatement:
 		return e.evalPauseStatement(node)
@@ -172,11 +259,11 @@ func (e *Evaluator) evalProgram(program *ast.Program) (Value, error) {
 		result = val
 
 		// Check for control flow
-		if e.ctx.ShouldReturn() {
-			result, _ = e.ctx.GetReturn()
+		if e.frame.ShouldReturn() {
+			result, _ = e.frame.GetReturn()
 			break
 		}
-		if e.ctx.ShouldStop() || e.ctx.ShouldPause() {
+		if e.frame.ShouldStop() || e.frame.ShouldPause() {
 			break
 		}
 	}
@@ -212,7 +299,7 @@ func (e *Evaluator) evalProgramWithModules(program *ast.Program) (Value, error) 
 
 	// Merge main scope into evaluator's scope
 	for name, val := range mainScope.store {
-		e.ctx.Scope.Set(name, val)
+		e.frame.Scope.Set(name, val)
 	}
 
 	// Execute MAIN module body if present
@@ -225,11 +312,11 @@ func (e *Evaluator) evalProgramWithModules(program *ast.Program) (Value, error) 
 			}
 
 			// Check for control flow
-			if e.ctx.ShouldReturn() {
-				result, _ = e.ctx.GetReturn()
+			if e.frame.ShouldReturn() {
+				result, _ = e.frame.GetReturn()
 				return result, nil
 			}
-			if e.ctx.ShouldStop() || e.ctx.ShouldPause() {
+			if e.frame.ShouldStop() || e.frame.ShouldPause() {
 				return result, nil
 			}
 		}
@@ -249,7 +336,7 @@ func (e *Evaluator) evalBlock(block *ast.Block) (Value, error) {
 		result = val
 
 		// Check for control flow
-		if e.ctx.ShouldInterrupt() {
+		if e.frame.ShouldInterrupt() {
 			break
 		}
 	}
@@ -258,7 +345,7 @@ func (e *Evaluator) evalBlock(block *ast.Block) (Value, error) {
 }
 
 func (e *Evaluator) evalIdentifier(node *ast.Identifier) (Value, error) {
-	val, ok := e.ctx.Scope.Get(node.Value)
+	val, ok := e.frame.Scope.Get(node.Value)
 	if ok {
 		return val, nil
 	}
@@ -281,7 +368,7 @@ func (e *Evaluator) evalHyphenatedFallback(name string) (Value, error) {
 	parts := strings.Split(name, "-")
 	values := make([]Value, len(parts))
 	for i, part := range parts {
-		val, ok := e.ctx.Scope.Get(part)
+		val, ok := e.frame.Scope.Get(part)
 		if !ok {
 			val, ok = e.ctx.Globals.Get(part)
 		}
@@ -347,7 +434,7 @@ func (e *Evaluator) evalAssignment(node *ast.AssignStatement) (Value, error) {
 func (e *Evaluator) assignToTarget(target ast.Expression, val Value) error {
 	switch t := target.(type) {
 	case *ast.Identifier:
-		e.ctx.Scope.Update(t.Value, val)
+		e.frame.Scope.Update(t.Value, val)
 		return nil
 
 	case *ast.IndexExpression:
@@ -722,6 +809,14 @@ func (e *Evaluator) evalCallExpression(node *ast.CallExpression) (Value, error) 
 	return e.callFunction(fn, args, kwargs)
 }
 
+// InvokeFunction calls a callable Value with the given args. It is the public
+// entry point for external callers (e.g. pipeline builtins) that hold a Value
+// and need to invoke it with the evaluator's full call machinery — including
+// per-frame scope isolation and control-flow safety.
+func (e *Evaluator) InvokeFunction(fn Value, args []Value) (Value, error) {
+	return e.callFunction(fn, args, nil)
+}
+
 func (e *Evaluator) callFunction(fn Value, args []Value, kwargs map[string]Value) (Value, error) {
 	switch f := fn.(type) {
 	case *FunctionValue:
@@ -830,7 +925,8 @@ func (e *Evaluator) callUserFunction(fn *FunctionValue, args []Value, kwargs map
 	}
 	defer e.ctx.ExitCall()
 
-	// Create new scope for function execution
+	// Create new scope for function execution, enclosed by the function's
+	// definition environment (closure semantics).
 	fnScope := NewEnclosedScope(fn.Env)
 
 	// Bind parameters
@@ -843,7 +939,7 @@ func (e *Evaluator) callUserFunction(fn *FunctionValue, args []Value, kwargs map
 		} else if i < len(args) {
 			val = args[i]
 		} else if param.Default != nil {
-			// Evaluate default value
+			// Evaluate default value in the *caller's* frame.
 			var err error
 			val, err = e.Eval(param.Default)
 			if err != nil {
@@ -856,21 +952,28 @@ func (e *Evaluator) callUserFunction(fn *FunctionValue, args []Value, kwargs map
 		fnScope.Set(param.Name.Value, val)
 	}
 
-	// Execute function body
-	oldScope := e.ctx.Scope
-	e.ctx.Scope = fnScope
-	defer func() {
-		e.ctx.Scope = oldScope
-	}()
-
-	result, err := e.evalBlock(fn.Body)
+	// Execute function body in an isolated child evaluator. The child owns its
+	// own evalFrame (fresh control-flow flags + fnScope) so a concurrent caller
+	// cannot observe or corrupt this call's return/break/stop state.
+	child := e.childEval(fnScope)
+	result, err := child.evalBlock(fn.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	// Check for return value
-	if retVal, ok := e.ctx.GetReturn(); ok {
+	// Harvest return value from the child frame — it is never visible to the
+	// caller's frame, keeping control-flow signals local.
+	if retVal, ok := child.frame.GetReturn(); ok {
 		return retVal, nil
+	}
+
+	// If the function's body triggered stop/pause, bubble the signal up to
+	// the caller's frame so top-level evaluation can react.
+	if child.frame.ShouldStop() {
+		e.frame.SetStop(child.frame.NeedsRollback())
+	}
+	if child.frame.ShouldPause() {
+		e.frame.SetPause(child.frame.GetPauseMessage())
 	}
 
 	return result, nil
@@ -887,7 +990,7 @@ func (e *Evaluator) callLambda(fn *LambdaValue, args []Value) (Value, error) {
 	}
 	defer e.ctx.ExitCall()
 
-	// Create new scope
+	// Create new scope enclosed by the lambda's capture environment.
 	fnScope := NewEnclosedScope(fn.Env)
 
 	// Bind parameters
@@ -895,14 +998,22 @@ func (e *Evaluator) callLambda(fn *LambdaValue, args []Value) (Value, error) {
 		fnScope.Set(param.Value, args[i])
 	}
 
-	// Execute body
-	oldScope := e.ctx.Scope
-	e.ctx.Scope = fnScope
-	defer func() {
-		e.ctx.Scope = oldScope
-	}()
+	// Execute body in an isolated child evaluator (own frame + fnScope).
+	child := e.childEval(fnScope)
+	result, err := child.Eval(fn.Body)
+	if err != nil {
+		return nil, err
+	}
 
-	return e.Eval(fn.Body)
+	// Bubble stop/pause signals from lambda body to caller frame.
+	if child.frame.ShouldStop() {
+		e.frame.SetStop(child.frame.NeedsRollback())
+	}
+	if child.frame.ShouldPause() {
+		e.frame.SetPause(child.frame.GetPauseMessage())
+	}
+
+	return result, nil
 }
 
 func (e *Evaluator) evalIndexExpression(node *ast.IndexExpression) (Value, error) {
@@ -1142,7 +1253,7 @@ func (e *Evaluator) evalLambdaExpression(node *ast.LambdaExpression) (Value, err
 	return &LambdaValue{
 		Parameters:  node.Parameters,
 		Body:        node.Body,
-		Env:         e.ctx.Scope,
+		Env:         e.frame.Scope,
 		TokenLine:   node.Token.Line,
 		TokenColumn: node.Token.Column,
 	}, nil
@@ -1292,8 +1403,8 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 	defer lc.Done()
 
 	// Create scope for loop
-	e.ctx.PushScope()
-	defer e.ctx.PopScope()
+	e.frame.PushScope()
+	defer e.frame.PopScope()
 
 	var result Value = NONE
 	index := int64(0)
@@ -1330,9 +1441,9 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 
 		// Bind loop variables
 		if node.Index != nil {
-			e.ctx.Scope.Set(node.Index.Value, &IntValue{Value: index})
+			e.frame.Scope.Set(node.Index.Value, &IntValue{Value: index})
 		}
-		e.ctx.Scope.Set(node.Variable.Value, val)
+		e.frame.Scope.Set(node.Variable.Value, val)
 
 		// Execute body
 		result, err = e.evalBlock(node.Body)
@@ -1341,14 +1452,14 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 		}
 
 		// Handle control flow
-		if e.ctx.ShouldBreak() {
-			e.ctx.ClearBreak()
+		if e.frame.ShouldBreak() {
+			e.frame.ClearBreak()
 			break
 		}
-		if e.ctx.ShouldContinue() {
-			e.ctx.ClearContinue()
+		if e.frame.ShouldContinue() {
+			e.frame.ClearContinue()
 		}
-		if e.ctx.ShouldReturn() || e.ctx.ShouldStop() || e.ctx.ShouldPause() {
+		if e.frame.ShouldReturn() || e.frame.ShouldStop() || e.frame.ShouldPause() {
 			break
 		}
 
@@ -1442,9 +1553,9 @@ func (e *Evaluator) evalMatchStatement(node *ast.MatchStatement) (Value, error) 
 			if ident, ok := arm.Body.(*ast.Identifier); ok {
 				switch ident.Value {
 				case "continue":
-					e.ctx.SetContinue()
+					e.frame.SetContinue()
 				case "break":
-					e.ctx.SetBreak()
+					e.frame.SetBreak()
 				}
 			}
 
@@ -1493,7 +1604,7 @@ func (e *Evaluator) matchPattern(pattern ast.Expression, subject Value) (bool, e
 			return true, nil
 		}
 		// Named pattern - bind value
-		e.ctx.Scope.Set(p.Value, subject)
+		e.frame.Scope.Set(p.Value, subject)
 		return true, nil
 
 	case *ast.IntegerLiteral:
@@ -1538,10 +1649,10 @@ func (e *Evaluator) evalDefStatement(node *ast.DefStatement) (Value, error) {
 		Name:       node.Name.Value,
 		Parameters: node.Parameters,
 		Body:       node.Body,
-		Env:        e.ctx.Scope,
+		Env:        e.frame.Scope,
 	}
 
-	e.ctx.Scope.Set(node.Name.Value, fn)
+	e.frame.Scope.Set(node.Name.Value, fn)
 	return fn, nil
 }
 
@@ -1555,7 +1666,7 @@ func (e *Evaluator) evalReturnStatement(node *ast.ReturnStatement) (Value, error
 		}
 	}
 
-	e.ctx.SetReturn(val)
+	e.frame.SetReturn(val)
 	return val, nil
 }
 
@@ -1586,7 +1697,7 @@ func (e *Evaluator) evalEmitStatement(node *ast.EmitStatement) (Value, error) {
 }
 
 func (e *Evaluator) evalStopStatement(node *ast.StopStatement) (Value, error) {
-	e.ctx.SetStop(node.Rollback)
+	e.frame.SetStop(node.Rollback)
 	return NONE, nil
 }
 
@@ -1600,7 +1711,7 @@ func (e *Evaluator) evalPauseStatement(node *ast.PauseStatement) (Value, error) 
 		// Use the String() method from the Value interface
 		message = msgVal.String()
 	}
-	e.ctx.SetPause(message)
+	e.frame.SetPause(message)
 	return NONE, nil
 }
 
@@ -1611,7 +1722,7 @@ func (e *Evaluator) evalTryStatement(node *ast.TryStatement) (Value, error) {
 		for _, catch := range node.Catches {
 			// TODO: Implement error type matching
 			if catch.Variable != nil {
-				e.ctx.Scope.Set(catch.Variable.Value, &SlopError{Message: err.Error()})
+				e.frame.Scope.Set(catch.Variable.Value, &SlopError{Message: err.Error()})
 			}
 			// Execute catch block - if it succeeds, return its result
 			if catchResult, catchErr := e.evalBlock(catch.Body); catchErr == nil {
@@ -1672,8 +1783,8 @@ func (e *Evaluator) evalListComprehension(node *ast.ListComprehension) (Value, e
 		return nil, err
 	}
 
-	e.ctx.PushScope()
-	defer e.ctx.PopScope()
+	e.frame.PushScope()
+	defer e.frame.PopScope()
 
 	elements := []Value{}
 	index := int64(0)
@@ -1685,9 +1796,9 @@ func (e *Evaluator) evalListComprehension(node *ast.ListComprehension) (Value, e
 		}
 
 		if node.Index != nil {
-			e.ctx.Scope.Set(node.Index.Value, &IntValue{Value: index})
+			e.frame.Scope.Set(node.Index.Value, &IntValue{Value: index})
 		}
-		e.ctx.Scope.Set(node.Variable.Value, val)
+		e.frame.Scope.Set(node.Variable.Value, val)
 
 		// Check filter
 		if node.Filter != nil {
@@ -1724,8 +1835,8 @@ func (e *Evaluator) evalMapComprehension(node *ast.MapComprehension) (Value, err
 		return nil, err
 	}
 
-	e.ctx.PushScope()
-	defer e.ctx.PopScope()
+	e.frame.PushScope()
+	defer e.frame.PopScope()
 
 	result := NewMapValue()
 
@@ -1740,12 +1851,12 @@ func (e *Evaluator) evalMapComprehension(node *ast.MapComprehension) (Value, err
 		switch v := val.(type) {
 		case *ListValue:
 			if len(v.Elements) >= 2 {
-				e.ctx.Scope.Set(node.KeyVar.Value, v.Elements[0])
-				e.ctx.Scope.Set(node.ValueVar.Value, v.Elements[1])
+				e.frame.Scope.Set(node.KeyVar.Value, v.Elements[0])
+				e.frame.Scope.Set(node.ValueVar.Value, v.Elements[1])
 			}
 		default:
-			e.ctx.Scope.Set(node.KeyVar.Value, val)
-			e.ctx.Scope.Set(node.ValueVar.Value, val)
+			e.frame.Scope.Set(node.KeyVar.Value, val)
+			e.frame.Scope.Set(node.ValueVar.Value, val)
 		}
 
 		// Check filter
