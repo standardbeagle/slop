@@ -3,6 +3,7 @@ package evaluator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/standardbeagle/slop/internal/ast"
@@ -318,4 +319,102 @@ func TestCheckpointDirectory(t *testing.T) {
 
 	// Verify directory was created
 	assert.DirExists(t, tmpDir)
+}
+
+// TestWriteFileAtomic_ContentCorrect verifies that after a successful atomic
+// write the destination file contains exactly the expected data.
+func TestWriteFileAtomic_ContentCorrect(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "atomic-write-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	dest := filepath.Join(tmpDir, "output.json")
+	payload := []byte(`{"hello":"world"}`)
+
+	err = writeFileAtomic(dest, payload, 0644)
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	assert.Equal(t, payload, got)
+}
+
+// TestWriteFileAtomic_NoTempFileLeft confirms that no .tmp-checkpoint-* files
+// remain in the directory after a successful write.
+func TestWriteFileAtomic_NoTempFileLeft(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "atomic-write-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	dest := filepath.Join(tmpDir, "cp.json")
+	err = writeFileAtomic(dest, []byte(`{}`), 0644)
+	require.NoError(t, err)
+
+	entries, err := os.ReadDir(tmpDir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.False(t, strings.HasPrefix(e.Name(), ".tmp-checkpoint-"),
+			"unexpected temp file left: %s", e.Name())
+	}
+}
+
+// TestWriteFileAtomic_TempFileCleanedOnError verifies that when the rename
+// would fail (destination dir does not exist) no temp file leaks into the
+// source directory.
+func TestWriteFileAtomic_TempFileCleanedOnError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "atomic-write-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	// Destination in a nonexistent sub-directory — Rename will fail.
+	dest := filepath.Join(tmpDir, "nonexistent", "cp.json")
+	err = writeFileAtomic(dest, []byte(`{}`), 0644)
+	require.Error(t, err)
+
+	// Verify no temp file was left in tmpDir.
+	entries, err := os.ReadDir(tmpDir)
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.False(t, strings.HasPrefix(e.Name(), ".tmp-checkpoint-"),
+			"temp file leaked: %s", e.Name())
+	}
+}
+
+// TestCheckpointManager_AtomicWrite_ContentPreserved integrates the full
+// save path and confirms the written JSON can be read back correctly.
+func TestCheckpointManager_AtomicWrite_ContentPreserved(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "atomic-cm-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	script := `val = 99
+pause "atomic-test"`
+
+	l := lexer.New(script)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	require.Empty(t, p.Errors())
+
+	e := New()
+	_, err = e.Eval(program)
+	require.NoError(t, err)
+	require.True(t, e.ctx.ShouldPause())
+
+	cm := NewCheckpointManager(tmpDir)
+	cm.SetProgram(program, script)
+
+	pos := Position{Line: 2, Column: 1, StatementIndex: 1}
+	path, err := cm.SaveCheckpoint(e.ctx, pos, "atomic")
+	require.NoError(t, err)
+
+	// Reload and verify data integrity.
+	builtins := make(map[string]*BuiltinValue)
+	services := make(map[string]Service)
+	checkpoint, ctx, err := cm.LoadCheckpoint(path, builtins, services)
+	require.NoError(t, err)
+	assert.Equal(t, "atomic-test", checkpoint.CheckpointMessage)
+
+	val, ok := ctx.Scope.Get("val")
+	require.True(t, ok)
+	assert.Equal(t, int64(99), val.(*IntValue).Value)
 }

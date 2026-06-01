@@ -703,3 +703,162 @@ func TestEvalHyphenatedIdentifiers(t *testing.T) {
 		assert.Equal(t, int64(7), iv.Value)
 	})
 }
+
+// TestEvalCollectionEquality verifies deep structural equality for list, map,
+// and set values — not pointer identity.
+func TestEvalCollectionEquality(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		// List equality
+		{"empty lists equal", "[] == []", true},
+		{"equal lists", "[1, 2, 3] == [1, 2, 3]", true},
+		{"lists different length", "[1, 2] == [1, 2, 3]", false},
+		{"lists different element", "[1, 2, 3] == [1, 2, 4]", false},
+		{"list inequality op", "[1, 2] != [1, 3]", true},
+		// Nested list equality
+		{"nested lists equal", "[[1, 2], [3]] == [[1, 2], [3]]", true},
+		{"nested lists not equal", "[[1, 2], [3]] == [[1, 2], [4]]", false},
+		// Map equality
+		{"empty maps equal", "{} == {}", true},
+		{"equal maps", "{a: 1, b: 2} == {a: 1, b: 2}", true},
+		{"maps different value", "{a: 1} == {a: 2}", false},
+		{"maps different key set", "{a: 1, b: 2} == {a: 1}", false},
+		// Set equality ({x, y, ...} is a set literal; {} is an empty map)
+		{"equal sets", "{1, 2, 3} == {1, 2, 3}", true},
+		{"sets different element", "{1, 2, 3} == {1, 2, 4}", false},
+		{"sets different size", "{1, 2} == {1, 2, 3}", false},
+		{"set inequality op", "{1, 2} != {1, 3}", true},
+		// in operator with list-as-element (nested)
+		{"list in list of lists", "[1, 2] in [[1, 2], [3, 4]]", true},
+		{"list not in list of lists", "[1, 3] in [[1, 2], [3, 4]]", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := testEval(t, tt.input)
+			bv, ok := result.(*BoolValue)
+			require.True(t, ok, "expected BoolValue, got %T (%s)", result, result)
+			assert.Equal(t, tt.expected, bv.Value)
+		})
+	}
+}
+
+// TestEvalEqualFunctionDirect exercises the Equal() helper directly for full
+// coverage of nested and mixed-depth collection cases.
+func TestEvalEqualFunctionDirect(t *testing.T) {
+	// List
+	assert.True(t, Equal(&ListValue{}, &ListValue{}))
+	assert.True(t, Equal(
+		&ListValue{Elements: []Value{&IntValue{1}, &IntValue{2}}},
+		&ListValue{Elements: []Value{&IntValue{1}, &IntValue{2}}},
+	))
+	assert.False(t, Equal(
+		&ListValue{Elements: []Value{&IntValue{1}}},
+		&ListValue{Elements: []Value{&IntValue{2}}},
+	))
+	// List != non-list
+	assert.False(t, Equal(&ListValue{}, &MapValue{Pairs: map[string]Value{}}))
+
+	// Map
+	m1 := NewMapValue()
+	m1.Set("x", &IntValue{42})
+	m2 := NewMapValue()
+	m2.Set("x", &IntValue{42})
+	m3 := NewMapValue()
+	m3.Set("x", &IntValue{99})
+	assert.True(t, Equal(m1, m2))
+	assert.False(t, Equal(m1, m3))
+
+	// Set
+	s1 := NewSetValue()
+	s1.Add(&IntValue{1})
+	s1.Add(&IntValue{2})
+	s2 := NewSetValue()
+	s2.Add(&IntValue{1})
+	s2.Add(&IntValue{2})
+	s3 := NewSetValue()
+	s3.Add(&IntValue{1})
+	s3.Add(&IntValue{3})
+	assert.True(t, Equal(s1, s2))
+	assert.False(t, Equal(s1, s3))
+
+	// Nested: list containing map
+	inner1 := NewMapValue()
+	inner1.Set("k", &StringValue{"v"})
+	inner2 := NewMapValue()
+	inner2.Set("k", &StringValue{"v"})
+	nested1 := &ListValue{Elements: []Value{inner1}}
+	nested2 := &ListValue{Elements: []Value{inner2}}
+	assert.True(t, Equal(nested1, nested2))
+
+	// Map containing list value
+	ml1 := NewMapValue()
+	ml1.Set("items", &ListValue{Elements: []Value{&IntValue{1}, &IntValue{2}}})
+	ml2 := NewMapValue()
+	ml2.Set("items", &ListValue{Elements: []Value{&IntValue{1}, &IntValue{2}}})
+	assert.True(t, Equal(ml1, ml2))
+	ml3 := NewMapValue()
+	ml3.Set("items", &ListValue{Elements: []Value{&IntValue{1}, &IntValue{9}}})
+	assert.False(t, Equal(ml1, ml3))
+}
+
+// TestEqualCycleGuardList proves that Equal() does not stack-overflow on a
+// self-referential list. list.append() mutates in place so x=[]; x.append(x)
+// is a valid (if pathological) SLOP value. Without the cycle guard this test
+// would hang forever (or crash via Go stack exhaustion).
+func TestEqualCycleGuardList(t *testing.T) {
+	// x is a list that contains itself: x[0] == x
+	x := &ListValue{}
+	x.Elements = []Value{x}
+
+	// A self-cyclic list must equal itself (co-inductive termination).
+	assert.True(t, Equal(x, x), "self-cyclic list must equal itself")
+
+	// Two structurally identical cyclic lists: y[0] == y, z[0] == z.
+	// They are isomorphic so Equal must return true.
+	y := &ListValue{}
+	y.Elements = []Value{y}
+	z := &ListValue{}
+	z.Elements = []Value{z}
+	assert.True(t, Equal(y, z), "two isomorphic cyclic lists must be equal")
+
+	// A self-cyclic list is NOT equal to a simple non-cyclic list: lengths differ
+	// at each unrolling level — the cycle guard fires on the cyclic side while the
+	// non-cyclic side has a definite length mismatch.
+	plain := &ListValue{Elements: []Value{&IntValue{1}}}
+	// plain[0] is an IntValue; x[0] is a *ListValue — types differ so Equal returns false.
+	assert.False(t, Equal(x, plain), "cyclic list != non-cyclic list")
+}
+
+// TestEqualCycleGuardMap proves that Equal() terminates on a self-referential
+// map. A script can produce such a map via m={}; m["self"]=m.
+func TestEqualCycleGuardMap(t *testing.T) {
+	m := NewMapValue()
+	m.Set("self", m)
+
+	assert.True(t, Equal(m, m), "self-cyclic map must equal itself")
+
+	m2 := NewMapValue()
+	m2.Set("self", m2)
+	assert.True(t, Equal(m, m2), "two isomorphic self-cyclic maps must be equal")
+}
+
+// TestEqualDAGNoFalseNegative proves that a shared (non-cyclic) substructure is
+// not mis-classified as a cycle. x and y both reference the same inner list,
+// forming a DAG rather than a true cycle. Equal must still return true.
+func TestEqualDAGNoFalseNegative(t *testing.T) {
+	shared := &ListValue{Elements: []Value{&IntValue{1}, &IntValue{2}}}
+
+	// Both outer lists reference the same inner object — DAG, not a cycle.
+	outer1 := &ListValue{Elements: []Value{shared, shared}}
+	outer2 := &ListValue{Elements: []Value{shared, shared}}
+	assert.True(t, Equal(outer1, outer2), "DAG with shared node must still be equal")
+
+	// Different shared node (same value, different pointer) must also be equal.
+	shared2 := &ListValue{Elements: []Value{&IntValue{1}, &IntValue{2}}}
+	outer3 := &ListValue{Elements: []Value{shared2, shared2}}
+	assert.True(t, Equal(outer1, outer3), "DAG with structurally-equal shared nodes must be equal")
+}

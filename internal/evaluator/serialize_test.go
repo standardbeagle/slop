@@ -408,3 +408,67 @@ func TestHashScript(t *testing.T) {
 		t.Error("different scripts have same hash")
 	}
 }
+
+// TestSerializeValue_CyclicList verifies that a list containing itself is detected
+// and returns an error instead of causing a stack overflow.
+func TestSerializeValue_CyclicList(t *testing.T) {
+	s := NewSerializer(nil)
+
+	list := &ListValue{Elements: []Value{&IntValue{Value: 1}}}
+	// Simulate x=[1]; x.append(x) — list holds reference to itself
+	list.Elements = append(list.Elements, list)
+
+	_, err := s.SerializeValue(list)
+	if err == nil {
+		t.Fatal("expected error for cyclic list, got nil")
+	}
+}
+
+// TestSerializeValue_CyclicMap verifies that a map containing itself is detected.
+func TestSerializeValue_CyclicMap(t *testing.T) {
+	s := NewSerializer(nil)
+
+	m := NewMapValue()
+	m.Set("key", &StringValue{Value: "value"})
+	// Simulate m["self"] = m
+	m.Set("self", m)
+
+	_, err := s.SerializeValue(m)
+	if err == nil {
+		t.Fatal("expected error for cyclic map, got nil")
+	}
+}
+
+// TestSerializeValue_CyclicNested verifies detection of indirect cycles
+// (list -> map -> list).
+func TestSerializeValue_CyclicNested(t *testing.T) {
+	s := NewSerializer(nil)
+
+	list := &ListValue{}
+	m := NewMapValue()
+	m.Set("back", list)
+	list.Elements = []Value{m}
+
+	_, err := s.SerializeValue(list)
+	if err == nil {
+		t.Fatal("expected error for indirect cycle (list->map->list), got nil")
+	}
+}
+
+// TestSerializeValue_SharedNonCyclic verifies that DAG structures (same pointer
+// referenced from two different parents) are serialized correctly — no false
+// cycle positives.
+func TestSerializeValue_SharedNonCyclic(t *testing.T) {
+	s := NewSerializer(nil)
+
+	shared := &ListValue{Elements: []Value{&IntValue{Value: 42}}}
+	outer := &ListValue{Elements: []Value{shared, shared}}
+
+	sv, err := s.SerializeValue(outer)
+	if err != nil {
+		t.Fatalf("shared (non-cyclic) value should serialize without error: %v", err)
+	}
+	if sv.Type != "list" {
+		t.Errorf("expected type list, got %v", sv.Type)
+	}
+}

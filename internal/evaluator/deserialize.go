@@ -3,9 +3,22 @@ package evaluator
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/standardbeagle/slop/internal/ast"
+)
+
+// Checkpoint validation limits — hard caps that a legitimate checkpoint
+// written by this runtime will never exceed, used to reject injected state.
+const (
+	// maxCheckpointIterators caps the number of items in a list iterator to
+	// guard against memory exhaustion via a crafted checkpoint.
+	maxCheckpointIteratorItems = 1_000_000
+
+	// maxCheckpointCost caps the TotalCost / MaxCost fields to a value that
+	// cannot silently reset a budget already consumed by a running script.
+	maxCheckpointCost = 1_000_000.0
 )
 
 // Deserializer handles deserialization of execution state.
@@ -372,6 +385,65 @@ func (d *Deserializer) deserializeIterator(data json.RawMessage) (*IteratorValue
 		return nil, fmt.Errorf("deserializing iterator: %w", err)
 	}
 
+	// Validate iterator type.
+	if si.IterType != "range" && si.IterType != "list" {
+		return nil, fmt.Errorf("invalid iterator type: %q", si.IterType)
+	}
+
+	// Bounds-check range iterator fields to prevent injected giant / negative
+	// step values that would cause the evaluator to loop for an unbounded time
+	// or produce nonsense results.
+	if si.IterType == "range" {
+		// Step = 0 produces an infinite loop; negative step with Current<End
+		// (or vice versa) is also pathological.
+		if si.Step == 0 {
+			return nil, fmt.Errorf("invalid range iterator: step must not be zero")
+		}
+		// Current must be on the correct side of End for the step direction.
+		if si.Step > 0 && si.Current > si.End {
+			return nil, fmt.Errorf("invalid range iterator: current (%d) > end (%d) with positive step", si.Current, si.End)
+		}
+		if si.Step < 0 && si.Current < si.End {
+			return nil, fmt.Errorf("invalid range iterator: current (%d) < end (%d) with negative step", si.Current, si.End)
+		}
+		// Guard against absurdly large iteration counts that would block the host.
+		// Use int64 arithmetic; guard Step == math.MinInt32 before negating to
+		// avoid overflow (SerializedIterator uses int, which is at least 32 bits).
+		if si.Step != 0 {
+			absStep := int64(si.Step)
+			if absStep < 0 {
+				absStep = -absStep
+			}
+			if absStep == 0 {
+				// Overflow guard: MinInt negated wraps back to MinInt on 64-bit;
+				// treat as an invalid step.
+				return nil, fmt.Errorf("invalid range iterator: step value overflows")
+			}
+			count := int64(0)
+			if si.Step > 0 {
+				count = (int64(si.End) - int64(si.Current) + absStep - 1) / absStep
+			} else {
+				count = (int64(si.Current) - int64(si.End) + absStep - 1) / absStep
+			}
+			if count > int64(maxCheckpointIteratorItems) {
+				return nil, fmt.Errorf("invalid range iterator: iteration count %d exceeds limit %d", count, maxCheckpointIteratorItems)
+			}
+		}
+	}
+
+	// Bounds-check list iterator.
+	if si.IterType == "list" {
+		if si.Current < 0 {
+			return nil, fmt.Errorf("invalid list iterator: current (%d) must not be negative", si.Current)
+		}
+		if len(si.Items) > maxCheckpointIteratorItems {
+			return nil, fmt.Errorf("invalid list iterator: item count %d exceeds limit %d", len(si.Items), maxCheckpointIteratorItems)
+		}
+		if si.Current > len(si.Items) {
+			return nil, fmt.Errorf("invalid list iterator: current (%d) exceeds item count (%d)", si.Current, len(si.Items))
+		}
+	}
+
 	iter := &IteratorValue{
 		Type_:   si.IterType,
 		Current: si.Current,
@@ -447,22 +519,86 @@ func (d *Deserializer) DeserializeScopeChain(scopes []*SerializedScope, currentI
 }
 
 // DeserializeLimits converts SerializedLimits back to ExecutionLimits.
-func DeserializeLimits(sl *SerializedLimits) *ExecutionLimits {
+// It rejects negative counters and counter values that exceed their
+// corresponding maximums (which would effectively disable a limit that was
+// already partially consumed), as well as out-of-range cost fields.
+func DeserializeLimits(sl *SerializedLimits) (*ExecutionLimits, error) {
 	if sl == nil {
-		return &ExecutionLimits{}
+		return &ExecutionLimits{}, nil
 	}
+
+	// Reject negative counter values — a legitimate checkpoint never produces
+	// these, and injecting them resets budget consumption to below zero.
+	if sl.IterationCount < 0 {
+		return nil, fmt.Errorf("invalid checkpoint: negative iteration_count (%d)", sl.IterationCount)
+	}
+	if sl.LLMCallCount < 0 {
+		return nil, fmt.Errorf("invalid checkpoint: negative llm_call_count (%d)", sl.LLMCallCount)
+	}
+	if sl.APICallCount < 0 {
+		return nil, fmt.Errorf("invalid checkpoint: negative api_call_count (%d)", sl.APICallCount)
+	}
+	if sl.CallDepth < 0 {
+		return nil, fmt.Errorf("invalid checkpoint: negative call_depth (%d)", sl.CallDepth)
+	}
+	if sl.TotalCost < 0 {
+		return nil, fmt.Errorf("invalid checkpoint: negative total_cost (%v)", sl.TotalCost)
+	}
+
+	// Reject non-finite cost fields.
+	if math.IsNaN(sl.TotalCost) || math.IsInf(sl.TotalCost, 0) {
+		return nil, fmt.Errorf("invalid checkpoint: non-finite total_cost (%v)", sl.TotalCost)
+	}
+	if math.IsNaN(sl.MaxCost) || math.IsInf(sl.MaxCost, 0) {
+		return nil, fmt.Errorf("invalid checkpoint: non-finite max_cost (%v)", sl.MaxCost)
+	}
+
+	// Reject implausibly large cost values.
+	if sl.TotalCost > maxCheckpointCost {
+		return nil, fmt.Errorf("invalid checkpoint: total_cost (%v) exceeds limit (%v)", sl.TotalCost, maxCheckpointCost)
+	}
+	if sl.MaxCost < 0 {
+		return nil, fmt.Errorf("invalid checkpoint: negative max_cost (%v)", sl.MaxCost)
+	}
+
+	// If a maximum is set, the counter must not exceed it — resuming a script
+	// that reports 1 000 000 of 10 iterations consumed would bypass the limit
+	// on the very first operation after resume.
+	if sl.MaxIterations > 0 && sl.IterationCount > sl.MaxIterations {
+		return nil, fmt.Errorf("invalid checkpoint: iteration_count (%d) exceeds max_iterations (%d)", sl.IterationCount, sl.MaxIterations)
+	}
+	if sl.MaxLLMCalls > 0 && sl.LLMCallCount > sl.MaxLLMCalls {
+		return nil, fmt.Errorf("invalid checkpoint: llm_call_count (%d) exceeds max_llm_calls (%d)", sl.LLMCallCount, sl.MaxLLMCalls)
+	}
+	if sl.MaxAPICalls > 0 && sl.APICallCount > sl.MaxAPICalls {
+		return nil, fmt.Errorf("invalid checkpoint: api_call_count (%d) exceeds max_api_calls (%d)", sl.APICallCount, sl.MaxAPICalls)
+	}
+	if sl.MaxCost > 0 && sl.TotalCost > sl.MaxCost {
+		return nil, fmt.Errorf("invalid checkpoint: total_cost (%v) exceeds max_cost (%v)", sl.TotalCost, sl.MaxCost)
+	}
+	// Call depth must not exceed the effective maximum.
+	effectiveMaxCallDepth := sl.MaxCallDepth
+	if effectiveMaxCallDepth <= 0 {
+		effectiveMaxCallDepth = DefaultMaxCallDepth
+	}
+	if sl.CallDepth > effectiveMaxCallDepth {
+		return nil, fmt.Errorf("invalid checkpoint: call_depth (%d) exceeds max_call_depth (%d)", sl.CallDepth, effectiveMaxCallDepth)
+	}
+
 	return &ExecutionLimits{
 		MaxIterations:  sl.MaxIterations,
 		MaxLLMCalls:    sl.MaxLLMCalls,
 		MaxAPICalls:    sl.MaxAPICalls,
 		MaxDuration:    sl.MaxDuration,
 		MaxCost:        sl.MaxCost,
+		MaxCallDepth:   sl.MaxCallDepth,
 		IterationCount: sl.IterationCount,
 		LLMCallCount:   sl.LLMCallCount,
 		APICallCount:   sl.APICallCount,
 		StartTime:      sl.StartTime,
 		TotalCost:      sl.TotalCost,
-	}
+		CallDepth:      sl.CallDepth,
+	}, nil
 }
 
 // DeserializeTransactionLog converts SerializedTxLog back to TransactionLog.
@@ -567,12 +703,18 @@ func (d *Deserializer) DeserializeContext(sc *SerializedContext) (*Context, erro
 		emitted[i] = val
 	}
 
+	// Deserialize execution limits with bounds validation.
+	limits, err := DeserializeLimits(sc.Limits)
+	if err != nil {
+		return nil, fmt.Errorf("deserializing limits: %w", err)
+	}
+
 	// Create context
 	ctx := &Context{
 		Scope:    current,
 		Globals:  globals,
 		Services: d.services,
-		Limits:   DeserializeLimits(sc.Limits),
+		Limits:   limits,
 		TxLog:    txLog,
 		Emitted:  emitted,
 	}
@@ -608,18 +750,62 @@ func (d *Deserializer) DeserializeContext(sc *SerializedContext) (*Context, erro
 }
 
 // LoadCheckpoint loads and deserializes a checkpoint.
+// It performs structural validation before restoring any mutable state so that
+// a tampered or malformed checkpoint file cannot inject out-of-bounds values
+// into the execution context.
 func LoadCheckpoint(data []byte, program *ast.Program, builtins map[string]*BuiltinValue, services map[string]Service) (*Checkpoint, *Context, error) {
+	// Reject empty input before attempting any parse.
+	if len(data) == 0 {
+		return nil, nil, fmt.Errorf("checkpoint data is empty")
+	}
+
+	// Validate that the top-level structure is a JSON object and extract the
+	// required fields without first unmarshaling into the full Checkpoint type
+	// (which would silently ignore unknown keys and accept out-of-range values).
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, nil, fmt.Errorf("checkpoint is not a JSON object: %w", err)
+	}
+
+	// Require the mandatory top-level fields defined in the schema.
+	for _, required := range []string{"version", "script_hash", "position", "context", "created_at"} {
+		if _, ok := raw[required]; !ok {
+			return nil, nil, fmt.Errorf("checkpoint missing required field: %q", required)
+		}
+	}
+
+	// Validate version before doing any further work.
+	var version string
+	if err := json.Unmarshal(raw["version"], &version); err != nil {
+		return nil, nil, fmt.Errorf("checkpoint version is not a string: %w", err)
+	}
+	if version != CheckpointVersion {
+		return nil, nil, fmt.Errorf("checkpoint version mismatch: got %s, expected %s", version, CheckpointVersion)
+	}
+
+	// Validate script_hash format: must be a 64-char lowercase hex string.
+	var scriptHash string
+	if err := json.Unmarshal(raw["script_hash"], &scriptHash); err != nil {
+		return nil, nil, fmt.Errorf("checkpoint script_hash is not a string: %w", err)
+	}
+	if len(scriptHash) != 64 {
+		return nil, nil, fmt.Errorf("checkpoint script_hash has wrong length: got %d, want 64", len(scriptHash))
+	}
+	for _, c := range scriptHash {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return nil, nil, fmt.Errorf("checkpoint script_hash contains non-hex character: %q", c)
+		}
+	}
+
+	// Now unmarshal the full structure — post-structural-validation, so all
+	// further field-level validation (limits bounds, iterator bounds) will
+	// execute inside DeserializeContext / DeserializeLimits.
 	var checkpoint Checkpoint
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
 		return nil, nil, fmt.Errorf("unmarshaling checkpoint: %w", err)
 	}
 
-	// Verify version compatibility
-	if checkpoint.Version != CheckpointVersion {
-		return nil, nil, fmt.Errorf("checkpoint version mismatch: got %s, expected %s", checkpoint.Version, CheckpointVersion)
-	}
-
-	// Deserialize context
+	// Deserialize context (includes limits + iterator bounds validation).
 	deserializer := NewDeserializer(program, builtins, services)
 	ctx, err := deserializer.DeserializeContext(checkpoint.Context)
 	if err != nil {

@@ -744,8 +744,46 @@ func (e *Evaluator) callFunction(fn Value, args []Value, kwargs map[string]Value
 
 // callServiceMethod calls a service method and logs it to the transaction log.
 func (e *Evaluator) callServiceMethod(bound *BoundMethodValue, args []Value, kwargs map[string]Value) (Value, error) {
-	// Call the service
-	result, err := bound.Service.Call(bound.Method, args, kwargs)
+	// Enforce resource limits before performing any work. Failing fast here is
+	// what makes MaxLLMCalls/MaxAPICalls/MaxDuration effective against untrusted
+	// scripts: the call (and its cost) never happens once a cap is reached.
+	if err := e.ctx.CheckDuration(); err != nil {
+		return nil, err
+	}
+	if isLLMService(bound.Service, bound.ServiceName) {
+		if err := e.ctx.IncrementLLMCalls(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := e.ctx.IncrementAPICalls(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Call the service. Prefer the context-aware path so a hung LLM/MCP call
+	// cancels when the wall-clock budget is exhausted instead of blocking its
+	// goroutine forever; the deadline is rooted in the execution duration limit.
+	// Services without context support fall back to the plain Call.
+	var result Value
+	var err error
+	if ctxSvc, ok := bound.Service.(ContextService); ok {
+		callCtx, cancel := e.ctx.CallContext(context.Background())
+		result, err = ctxSvc.CallWithContext(callCtx, bound.Method, args, kwargs)
+		cancel()
+	} else {
+		result, err = bound.Service.Call(bound.Method, args, kwargs)
+	}
+
+	// Accumulate cost for services that report it, enforcing MaxCost. We do this
+	// after the call because cost is only known once the call completes. A
+	// failed call still counts toward the call budget but contributes no cost.
+	if err == nil {
+		if reporter, ok := bound.Service.(CostReporter); ok {
+			if cerr := e.ctx.AddCost(reporter.LastCallCost()); cerr != nil {
+				return nil, cerr
+			}
+		}
+	}
 
 	// Log the call to the transaction log
 	var logErr error
@@ -773,7 +811,25 @@ func (e *Evaluator) callServiceMethod(bound *BoundMethodValue, args []Value, kwa
 	return result, err
 }
 
+// isLLMService reports whether a service's calls count against the LLM budget.
+// A service may declare itself via the LLMServiceMarker interface; otherwise we
+// fall back to the conventional "llm" registration name.
+func isLLMService(svc Service, name string) bool {
+	if marker, ok := svc.(LLMServiceMarker); ok {
+		return marker.IsLLMService()
+	}
+	return name == "llm"
+}
+
 func (e *Evaluator) callUserFunction(fn *FunctionValue, args []Value, kwargs map[string]Value) (Value, error) {
+	// Bound recursion before entering the body: an unbounded recursive call would
+	// exhaust the Go stack and crash the host unrecoverably. The depth unwinds on
+	// every exit path via the deferred ExitCall.
+	if err := e.ctx.EnterCall(); err != nil {
+		return nil, err
+	}
+	defer e.ctx.ExitCall()
+
 	// Create new scope for function execution
 	fnScope := NewEnclosedScope(fn.Env)
 
@@ -824,6 +880,12 @@ func (e *Evaluator) callLambda(fn *LambdaValue, args []Value) (Value, error) {
 	if len(args) != len(fn.Parameters) {
 		return nil, fmt.Errorf("lambda expects %d arguments, got %d", len(fn.Parameters), len(args))
 	}
+
+	// Bound recursion before entering the body; see callUserFunction.
+	if err := e.ctx.EnterCall(); err != nil {
+		return nil, err
+	}
+	defer e.ctx.ExitCall()
 
 	// Create new scope
 	fnScope := NewEnclosedScope(fn.Env)
@@ -1250,6 +1312,11 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 
 		// Check global iteration limit
 		if err := e.ctx.IncrementIterations(); err != nil {
+			return nil, err
+		}
+
+		// Check wall-clock limit so compute-bound loops also honor MaxDuration.
+		if err := e.ctx.CheckDuration(); err != nil {
 			return nil, err
 		}
 

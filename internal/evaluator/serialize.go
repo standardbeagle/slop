@@ -109,11 +109,13 @@ type SerializedLimits struct {
 	MaxAPICalls    int64   `json:"max_api_calls,omitempty"`
 	MaxDuration    int64   `json:"max_duration,omitempty"`
 	MaxCost        float64 `json:"max_cost,omitempty"`
+	MaxCallDepth   int64   `json:"max_call_depth,omitempty"`
 	IterationCount int64   `json:"iteration_count"`
 	LLMCallCount   int64   `json:"llm_call_count"`
 	APICallCount   int64   `json:"api_call_count"`
 	StartTime      int64   `json:"start_time"`
 	TotalCost      float64 `json:"total_cost"`
+	CallDepth      int64   `json:"call_depth"`
 }
 
 // SerializedTxLog represents the transaction log.
@@ -161,16 +163,18 @@ type ServiceRef struct {
 
 // Serializer handles serialization of execution state.
 type Serializer struct {
-	scopeIDs   map[*Scope]string
-	nextID     int
-	program    *ast.Program // Original AST for function/lambda position lookup
+	scopeIDs          map[*Scope]string
+	nextID            int
+	program           *ast.Program // Original AST for function/lambda position lookup
+	visitedCollections map[interface{}]bool // pointer-identity cycle guard for collections
 }
 
 // NewSerializer creates a new serializer.
 func NewSerializer(program *ast.Program) *Serializer {
 	return &Serializer{
-		scopeIDs: make(map[*Scope]string),
-		program:  program,
+		scopeIDs:          make(map[*Scope]string),
+		visitedCollections: make(map[interface{}]bool),
+		program:           program,
 	}
 }
 
@@ -236,6 +240,12 @@ func (s *Serializer) SerializeValue(v Value) (*SerializedValue, error) {
 }
 
 func (s *Serializer) serializeList(l *ListValue) (*SerializedValue, error) {
+	if s.visitedCollections[l] {
+		return nil, fmt.Errorf("cycle detected: list contains a reference to itself")
+	}
+	s.visitedCollections[l] = true
+	defer delete(s.visitedCollections, l)
+
 	elements := make([]*SerializedValue, len(l.Elements))
 	for i, elem := range l.Elements {
 		ser, err := s.SerializeValue(elem)
@@ -249,6 +259,12 @@ func (s *Serializer) serializeList(l *ListValue) (*SerializedValue, error) {
 }
 
 func (s *Serializer) serializeMap(m *MapValue) (*SerializedValue, error) {
+	if s.visitedCollections[m] {
+		return nil, fmt.Errorf("cycle detected: map contains a reference to itself")
+	}
+	s.visitedCollections[m] = true
+	defer delete(s.visitedCollections, m)
+
 	pairs := make(map[string]*SerializedValue, len(m.Pairs))
 	for key, val := range m.Pairs {
 		ser, err := s.SerializeValue(val)
@@ -266,6 +282,12 @@ func (s *Serializer) serializeMap(m *MapValue) (*SerializedValue, error) {
 }
 
 func (s *Serializer) serializeSet(set *SetValue) (*SerializedValue, error) {
+	if s.visitedCollections[set] {
+		return nil, fmt.Errorf("cycle detected: set contains a reference to itself")
+	}
+	s.visitedCollections[set] = true
+	defer delete(s.visitedCollections, set)
+
 	elements := make([]*SerializedValue, 0, len(set.Elements))
 	for _, val := range set.Elements {
 		ser, err := s.SerializeValue(val)
@@ -453,11 +475,13 @@ func SerializeLimits(l *ExecutionLimits) *SerializedLimits {
 		MaxAPICalls:    l.MaxAPICalls,
 		MaxDuration:    l.MaxDuration,
 		MaxCost:        l.MaxCost,
+		MaxCallDepth:   l.MaxCallDepth,
 		IterationCount: l.IterationCount,
 		LLMCallCount:   l.LLMCallCount,
 		APICallCount:   l.APICallCount,
 		StartTime:      l.StartTime,
 		TotalCost:      l.TotalCost,
+		CallDepth:      l.CallDepth,
 	}
 }
 

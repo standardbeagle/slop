@@ -304,13 +304,238 @@ func TestDeserializeLimits(t *testing.T) {
 		TotalCost:      5.0,
 	}
 
-	limits := DeserializeLimits(sl)
+	limits, err := DeserializeLimits(sl)
+	if err != nil {
+		t.Fatalf("DeserializeLimits() unexpected error: %v", err)
+	}
 
 	if limits.MaxIterations != 1000 {
 		t.Errorf("MaxIterations = %d, want 1000", limits.MaxIterations)
 	}
 	if limits.IterationCount != 500 {
 		t.Errorf("IterationCount = %d, want 500", limits.IterationCount)
+	}
+}
+
+// TestDeserializeLimits_InjectionRejected verifies that crafted checkpoint
+// state that would bypass budget limits is rejected.
+func TestDeserializeLimits_InjectionRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		sl   *SerializedLimits
+	}{
+		{
+			"negative iteration_count",
+			&SerializedLimits{IterationCount: -1},
+		},
+		{
+			"negative llm_call_count",
+			&SerializedLimits{LLMCallCount: -1},
+		},
+		{
+			"negative api_call_count",
+			&SerializedLimits{APICallCount: -1},
+		},
+		{
+			"negative call_depth",
+			&SerializedLimits{CallDepth: -1},
+		},
+		{
+			"negative total_cost",
+			&SerializedLimits{TotalCost: -1.0},
+		},
+		{
+			"total_cost exceeds max_cost",
+			&SerializedLimits{MaxCost: 10.0, TotalCost: 20.0},
+		},
+		{
+			"iteration_count exceeds max_iterations",
+			&SerializedLimits{MaxIterations: 100, IterationCount: 200},
+		},
+		{
+			"llm_call_count exceeds max_llm_calls",
+			&SerializedLimits{MaxLLMCalls: 10, LLMCallCount: 50},
+		},
+		{
+			"api_call_count exceeds max_api_calls",
+			&SerializedLimits{MaxAPICalls: 5, APICallCount: 99},
+		},
+		{
+			"call_depth exceeds max_call_depth",
+			&SerializedLimits{MaxCallDepth: 100, CallDepth: 101},
+		},
+		{
+			"call_depth exceeds default max when max_call_depth unset",
+			&SerializedLimits{CallDepth: DefaultMaxCallDepth + 1},
+		},
+		{
+			"total_cost exceeds hard limit",
+			&SerializedLimits{TotalCost: maxCheckpointCost + 1.0},
+		},
+		{
+			"negative max_cost",
+			&SerializedLimits{MaxCost: -1.0},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := DeserializeLimits(tc.sl)
+			if err == nil {
+				t.Errorf("DeserializeLimits() expected error for %q, got nil", tc.name)
+			}
+		})
+	}
+}
+
+// TestDeserializeIterator_InjectionRejected verifies that crafted iterator
+// state that would cause unbounded loops or negative indices is rejected.
+func TestDeserializeIterator_InjectionRejected(t *testing.T) {
+	d := NewDeserializer(nil, nil, nil)
+
+	cases := []struct {
+		name string
+		si   *SerializedIterator
+	}{
+		{
+			"zero step range",
+			&SerializedIterator{IterType: "range", Current: 0, End: 10, Step: 0},
+		},
+		{
+			"positive step but current > end",
+			&SerializedIterator{IterType: "range", Current: 100, End: 10, Step: 1},
+		},
+		{
+			"negative step but current < end",
+			&SerializedIterator{IterType: "range", Current: 0, End: 100, Step: -1},
+		},
+		{
+			"iteration count exceeds limit",
+			&SerializedIterator{IterType: "range", Current: 0, End: maxCheckpointIteratorItems + 1, Step: 1},
+		},
+		{
+			"negative current list iterator",
+			&SerializedIterator{IterType: "list", Current: -1},
+		},
+		{
+			"current exceeds item count",
+			&SerializedIterator{IterType: "list", Current: 5, Items: []*SerializedValue{}},
+		},
+		{
+			"unknown iterator type",
+			&SerializedIterator{IterType: "bogus", Current: 0},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, _ := json.Marshal(tc.si)
+			_, err := d.deserializeIterator(data)
+			if err == nil {
+				t.Errorf("deserializeIterator() expected error for %q, got nil", tc.name)
+			}
+		})
+	}
+}
+
+// TestLoadCheckpoint_MissingRequiredFields verifies that checkpoints missing
+// mandatory schema fields are rejected before any state is restored.
+func TestLoadCheckpoint_MissingRequiredFields(t *testing.T) {
+	// Start from a valid minimal checkpoint JSON and remove required fields.
+	validJSON := `{
+		"version": "1.0",
+		"script_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"position": {"line": 1, "column": 1},
+		"context": {
+			"scopes": [{"id": "s1", "variables": {}, "is_global": true}],
+			"current_scope_id": "s1",
+			"limits": {},
+			"emitted": [],
+			"control_flow": {}
+		},
+		"created_at": "2026-01-01T00:00:00Z"
+	}`
+
+	requiredFields := []string{"version", "script_hash", "position", "context", "created_at"}
+	for _, field := range requiredFields {
+		t.Run("missing_"+field, func(t *testing.T) {
+			var obj map[string]json.RawMessage
+			_ = json.Unmarshal([]byte(validJSON), &obj)
+			delete(obj, field)
+			data, _ := json.Marshal(obj)
+			_, _, err := LoadCheckpoint(data, nil, nil, nil)
+			if err == nil {
+				t.Errorf("LoadCheckpoint() expected error when %q is absent, got nil", field)
+			}
+		})
+	}
+}
+
+// TestLoadCheckpoint_InvalidScriptHash verifies that malformed script_hash
+// values are rejected at load time.
+func TestLoadCheckpoint_InvalidScriptHash(t *testing.T) {
+	base := map[string]interface{}{
+		"version":     "1.0",
+		"position":    map[string]int{"line": 1, "column": 1},
+		"created_at":  "2026-01-01T00:00:00Z",
+		"context": map[string]interface{}{
+			"scopes":           []interface{}{map[string]interface{}{"id": "s1", "variables": map[string]interface{}{}, "is_global": true}},
+			"current_scope_id": "s1",
+			"limits":           map[string]interface{}{},
+			"emitted":          []interface{}{},
+			"control_flow":     map[string]interface{}{},
+		},
+	}
+
+	cases := []struct {
+		name string
+		hash string
+	}{
+		{"too short", "aabbcc"},
+		{"wrong chars", "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG"},
+		{"too long", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			obj := make(map[string]interface{})
+			for k, v := range base {
+				obj[k] = v
+			}
+			obj["script_hash"] = tc.hash
+			data, _ := json.Marshal(obj)
+			_, _, err := LoadCheckpoint(data, nil, nil, nil)
+			if err == nil {
+				t.Errorf("LoadCheckpoint() expected error for hash %q, got nil", tc.hash)
+			}
+		})
+	}
+}
+
+// TestLoadCheckpoint_InjectedLimitsRejected verifies end-to-end that a
+// checkpoint with out-of-bounds limits is rejected at load time.
+func TestLoadCheckpoint_InjectedLimitsRejected(t *testing.T) {
+	// Craft a checkpoint where iteration_count exceeds max_iterations.
+	payload := map[string]interface{}{
+		"version":     "1.0",
+		"script_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"position":    map[string]int{"line": 1, "column": 1},
+		"created_at":  "2026-01-01T00:00:00Z",
+		"context": map[string]interface{}{
+			"scopes":           []interface{}{map[string]interface{}{"id": "s1", "variables": map[string]interface{}{}, "is_global": true}},
+			"current_scope_id": "s1",
+			"limits": map[string]interface{}{
+				"max_iterations":  10,
+				"iteration_count": 9999, // injection: far exceeds the max
+			},
+			"emitted":      []interface{}{},
+			"control_flow": map[string]interface{}{},
+		},
+	}
+	data, _ := json.Marshal(payload)
+	_, _, err := LoadCheckpoint(data, nil, nil, nil)
+	if err == nil {
+		t.Error("LoadCheckpoint() expected error for injected iteration_count, got nil")
 	}
 }
 

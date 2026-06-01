@@ -1,8 +1,10 @@
 package evaluator
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Scope represents a variable scope.
@@ -112,6 +114,14 @@ type Context struct {
 	pauseMessage  string
 }
 
+// DefaultMaxCallDepth bounds recursion when no explicit MaxCallDepth is set.
+// SLOP's analyzer rejects recursion statically, but that check is advisory and
+// not enforced at runtime, so an untrusted script (or one fed past the analyzer)
+// can still recurse unbounded and exhaust the Go stack — an unrecoverable crash
+// of the host. This default keeps the guard always-on while staying well below
+// the depth at which the goroutine stack overflows.
+const DefaultMaxCallDepth = 5000
+
 // ExecutionLimits defines limits on script execution.
 type ExecutionLimits struct {
 	MaxIterations  int64 // Maximum total loop iterations
@@ -119,6 +129,7 @@ type ExecutionLimits struct {
 	MaxAPICalls    int64 // Maximum API calls
 	MaxDuration    int64 // Maximum execution time in seconds
 	MaxCost        float64 // Maximum cost in dollars
+	MaxCallDepth   int64 // Maximum nested user function/lambda call depth (0 = DefaultMaxCallDepth)
 
 	// Counters
 	IterationCount int64
@@ -126,6 +137,7 @@ type ExecutionLimits struct {
 	APICallCount   int64
 	StartTime      int64
 	TotalCost      float64
+	CallDepth      int64 // Current nested call depth
 }
 
 // TransactionLog records operations for potential rollback.
@@ -459,6 +471,34 @@ func (c *Context) IncrementAPICalls() error {
 	return nil
 }
 
+// EnterCall records entry into a user function or lambda body and enforces the
+// recursion-depth cap. It must be paired with ExitCall (via defer) so the depth
+// counter unwinds even when the body errors. The cap defaults to
+// DefaultMaxCallDepth when MaxCallDepth is unset, so the guard protects the host
+// against stack-exhaustion DoS regardless of caller configuration. The counter
+// is decremented before returning the error so a recovered/caught overflow does
+// not leave the depth permanently inflated.
+func (c *Context) EnterCall() error {
+	max := c.Limits.MaxCallDepth
+	if max <= 0 {
+		max = DefaultMaxCallDepth
+	}
+	c.Limits.CallDepth++
+	if c.Limits.CallDepth > max {
+		c.Limits.CallDepth--
+		return fmt.Errorf("call depth limit exceeded (%d): possible infinite recursion", max)
+	}
+	return nil
+}
+
+// ExitCall records return from a user function or lambda body. It is the inverse
+// of EnterCall and must run on every exit path (defer) to keep CallDepth honest.
+func (c *Context) ExitCall() {
+	if c.Limits.CallDepth > 0 {
+		c.Limits.CallDepth--
+	}
+}
+
 // AddCost adds to the cost counter and checks limits.
 func (c *Context) AddCost(cost float64) error {
 	c.Limits.TotalCost += cost
@@ -466,6 +506,54 @@ func (c *Context) AddCost(cost float64) error {
 		return fmt.Errorf("cost limit exceeded (%.2f)", c.Limits.MaxCost)
 	}
 	return nil
+}
+
+// CheckDuration enforces the wall-clock execution limit. The clock starts on
+// the first call (or from a restored StartTime after checkpoint resume), so it
+// is independent of the execution entry point. Returns an error once the
+// elapsed time exceeds MaxDuration seconds.
+func (c *Context) CheckDuration() error {
+	if c.Limits.MaxDuration <= 0 {
+		return nil
+	}
+	now := time.Now().Unix()
+	if c.Limits.StartTime == 0 {
+		c.Limits.StartTime = now
+		return nil
+	}
+	if now-c.Limits.StartTime > c.Limits.MaxDuration {
+		return fmt.Errorf("duration limit exceeded (%ds)", c.Limits.MaxDuration)
+	}
+	return nil
+}
+
+// CallContext derives a context for a single service call, bounded by the
+// remaining execution time. A hung LLM/MCP call must not block its goroutine
+// forever: the returned context cancels when the wall-clock budget would be
+// exceeded, so the call unwinds with context.DeadlineExceeded instead of
+// hanging. When MaxDuration is unset (<= 0) the parent context is returned
+// unbounded.
+//
+// The clock anchor (StartTime) is shared with CheckDuration, so a call started
+// late in a long-running script gets only the time left, and a restored
+// StartTime after checkpoint resume keeps the deadline stable. The caller is
+// responsible for invoking the returned CancelFunc to release resources.
+func (c *Context) CallContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if c.Limits == nil || c.Limits.MaxDuration <= 0 {
+		return context.WithCancel(parent)
+	}
+	start := c.Limits.StartTime
+	if start == 0 {
+		// Clock not yet started; anchor it now so the deadline and CheckDuration
+		// agree on the same origin.
+		start = time.Now().Unix()
+		c.Limits.StartTime = start
+	}
+	deadline := time.Unix(start+c.Limits.MaxDuration, 0)
+	return context.WithDeadline(parent, deadline)
 }
 
 // ShouldInterrupt checks if execution should be interrupted.

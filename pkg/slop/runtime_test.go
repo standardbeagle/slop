@@ -670,3 +670,119 @@ count
 		assert.Contains(t, err.Error(), "iteration limit")
 	})
 }
+
+// countingService implements evaluator.Service and counts calls. When llm is
+// true it declares itself an LLM service; cost is reported per call.
+type countingService struct {
+	calls    int
+	llm      bool
+	costEach float64
+}
+
+func (s *countingService) Call(method string, args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
+	s.calls++
+	return &evaluator.IntValue{Value: int64(s.calls)}, nil
+}
+
+func (s *countingService) IsLLMService() bool { return s.llm }
+
+func (s *countingService) LastCallCost() float64 { return s.costEach }
+
+func TestRuntimeResourceLimits(t *testing.T) {
+	t.Run("LLM call limit trips", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{MaxLLMCalls: 2})
+		svc := &countingService{llm: true}
+		rt.RegisterService("model", svc)
+
+		_, err := rt.Execute(`
+model.call()
+model.call()
+model.call()
+`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "LLM call limit")
+		// Third call must be blocked before reaching the service.
+		assert.Equal(t, 2, svc.calls)
+	})
+
+	t.Run("API call limit trips and LLM calls do not count against it", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{MaxAPICalls: 2})
+		api := &countingService{llm: false}
+		llm := &countingService{llm: true}
+		rt.RegisterService("api", api)
+		rt.RegisterService("model", llm)
+
+		// LLM calls should not consume the API budget.
+		_, err := rt.Execute(`
+model.call()
+model.call()
+model.call()
+api.call()
+api.call()
+api.call()
+`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "API call limit")
+		assert.Equal(t, 2, api.calls)
+		assert.Equal(t, 3, llm.calls)
+	})
+
+	t.Run("cost limit trips", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{MaxCost: 0.25})
+		svc := &countingService{llm: true, costEach: 0.1}
+		rt.RegisterService("model", svc)
+
+		// 0.1 + 0.1 + 0.1 = 0.3 > 0.25 → trips on the third call.
+		_, err := rt.Execute(`
+model.call()
+model.call()
+model.call()
+`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cost limit")
+		assert.Equal(t, 3, svc.calls) // cost is checked after the call completes
+	})
+
+	t.Run("no limits configured allows unbounded calls", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{})
+		svc := &countingService{llm: true, costEach: 1000}
+		rt.RegisterService("model", svc)
+
+		_, err := rt.Execute(`
+model.call()
+model.call()
+model.call()
+model.call()
+`)
+		require.NoError(t, err)
+		assert.Equal(t, 4, svc.calls)
+	})
+
+	t.Run("duration limit trips a compute-bound loop", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{MaxDuration: 1})
+		// Backdate StartTime so the limit is already exceeded on first check,
+		// keeping the test fast and deterministic.
+		rt.Context().Limits.StartTime = time.Now().Unix() - 5
+
+		_, err := rt.Execute(`
+count = 0
+for i in range(1000000):
+    count = count + 1
+count
+`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duration limit")
+	})
+
+	t.Run("duration limit trips a service call", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{MaxDuration: 1})
+		svc := &countingService{}
+		rt.RegisterService("api", svc)
+		rt.Context().Limits.StartTime = time.Now().Unix() - 5
+
+		_, err := rt.Execute(`api.call()`)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duration limit")
+		assert.Equal(t, 0, svc.calls) // blocked before the call
+	})
+}

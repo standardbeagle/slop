@@ -9,6 +9,55 @@ import (
 	"github.com/standardbeagle/slop/internal/ast"
 )
 
+// writeFileAtomic writes data to path atomically by writing to a temp file in
+// the same directory, fsyncing, and renaming.  If anything fails the temp file
+// is removed before returning the error.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+
+	// Create temp file in same directory so rename is on the same filesystem.
+	tmp, err := os.CreateTemp(dir, ".tmp-checkpoint-*")
+	if err != nil {
+		return fmt.Errorf("atomic write: create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	// Always clean up on failure.
+	ok := false
+	defer func() {
+		if !ok {
+			os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err = tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("atomic write: write temp: %w", err)
+	}
+
+	// fsync before rename so data is durable even if the OS crashes.
+	if err = tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("atomic write: sync temp: %w", err)
+	}
+
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("atomic write: close temp: %w", err)
+	}
+
+	// Apply desired permissions before rename.
+	if err = os.Chmod(tmpPath, perm); err != nil {
+		return fmt.Errorf("atomic write: chmod temp: %w", err)
+	}
+
+	if err = os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("atomic write: rename: %w", err)
+	}
+
+	ok = true
+	return nil
+}
+
 // CheckpointManager handles checkpoint save/load operations.
 type CheckpointManager struct {
 	checkpointDir string
@@ -78,8 +127,8 @@ func (cm *CheckpointManager) SaveCheckpoint(ctx *Context, pos Position, name str
 	filename := cm.generateFilename(checkpoint)
 	path := filepath.Join(cm.checkpointDir, filename)
 
-	// Write to file
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// Write to file atomically (temp + fsync + rename) to avoid corruption on crash or disk-full.
+	if err := writeFileAtomic(path, data, 0644); err != nil {
 		return "", fmt.Errorf("failed to write checkpoint file: %w", err)
 	}
 

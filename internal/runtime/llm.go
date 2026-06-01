@@ -119,6 +119,12 @@ func (s *LLMService) CallWithContext(ctx context.Context, method string, args []
 	return &evaluator.StringValue{Value: response.Content}, nil
 }
 
+// IsLLMService marks this service so its calls count against the LLM call
+// budget (MaxLLMCalls) rather than the generic API budget.
+func (s *LLMService) IsLLMService() bool {
+	return true
+}
+
 // Name returns the service name.
 func (s *LLMService) Name() string {
 	return "llm"

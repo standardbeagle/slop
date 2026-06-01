@@ -2,6 +2,7 @@
 package evaluator
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -211,6 +212,31 @@ type Service interface {
 	Call(method string, args []Value, kwargs map[string]Value) (Value, error)
 }
 
+// ContextService is implemented by services that accept a context.Context for
+// cancellation and timeout. The evaluator prefers CallWithContext over the
+// plain Call method so a hung service call unwinds when the execution deadline
+// passes instead of blocking its goroutine forever. Services that do not
+// implement it fall back to the context-free Call.
+type ContextService interface {
+	CallWithContext(ctx context.Context, method string, args []Value, kwargs map[string]Value) (Value, error)
+}
+
+// LLMServiceMarker is implemented by services whose calls should count against
+// the LLM call budget (MaxLLMCalls) rather than the generic API budget
+// (MaxAPICalls). Services that do not implement it are treated as API calls.
+type LLMServiceMarker interface {
+	IsLLMService() bool
+}
+
+// CostReporter is implemented by services that can report the monetary cost of
+// their most recent call. The reported cost is accumulated against MaxCost.
+// Services that do not implement it contribute zero cost — no cost is ever
+// fabricated.
+type CostReporter interface {
+	// LastCallCost returns the cost (in dollars) of the most recent Call.
+	LastCallCost() float64
+}
+
 // SlopError represents a runtime error value.
 type SlopError struct {
 	Message string
@@ -399,11 +425,105 @@ func Compare(a, b Value) (int, error) {
 	return 0, fmt.Errorf("cannot compare %s and %s", a.Type(), b.Type())
 }
 
-// Equal checks if two values are equal.
+// collectionPair is the key type for the cycle-guard visited set used by
+// equalWithGuard. Both fields are pointer-identity keys for ListValue, MapValue,
+// or SetValue; the pair is ordered (a, b) so (x, y) and (y, x) are distinct
+// entries — we only need to detect revisiting the same directed pair.
+type collectionPair struct{ a, b interface{} }
+
+// Equal checks if two values are structurally equal.
+//
+// For collection types (list, map, set) this performs deep structural equality.
+// list.append() mutates in place, so a script can build self-referential
+// collections (e.g. x=[]; x.append(x)). Without a cycle guard Equal() would
+// recurse infinitely and exhaust the Go stack. We use a co-inductive
+// pairwise visited-set: when a (ptrA, ptrB) pair is seen a second time we
+// treat it as equal and return true, which terminates any cycle. This mirrors
+// the visitedCollections pattern in serialize.go.
 func Equal(a, b Value) bool {
+	return equalWithGuard(a, b, make(map[collectionPair]bool))
+}
+
+func equalWithGuard(a, b Value, visited map[collectionPair]bool) bool {
+	// ListValue: same length and element-wise Equal (recursive)
+	if al, ok := a.(*ListValue); ok {
+		if bl, ok := b.(*ListValue); ok {
+			key := collectionPair{al, bl}
+			if visited[key] {
+				return true // co-inductive: assume equal on revisit to break cycle
+			}
+			visited[key] = true
+			defer delete(visited, key)
+			if len(al.Elements) != len(bl.Elements) {
+				return false
+			}
+			for i := range al.Elements {
+				if !equalWithGuard(al.Elements[i], bl.Elements[i], visited) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+
+	// MapValue: same key set and value-wise Equal (recursive)
+	if am, ok := a.(*MapValue); ok {
+		if bm, ok := b.(*MapValue); ok {
+			key := collectionPair{am, bm}
+			if visited[key] {
+				return true
+			}
+			visited[key] = true
+			defer delete(visited, key)
+			if len(am.Pairs) != len(bm.Pairs) {
+				return false
+			}
+			for k, av := range am.Pairs {
+				bv, exists := bm.Pairs[k]
+				if !exists || !equalWithGuard(av, bv, visited) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+
+	// SetValue: same number of members and each member of a is present in b.
+	// SetValue uses string representation as the key, so two sets are equal iff
+	// their string-keyed element maps have the same key sets and corresponding
+	// values are deeply equal.
+	// Note: SetValue.String() iterates Elements and would also infinite-loop on a
+	// self-containing set. In practice sets hold only immutable scalars (the
+	// interpreter enforces this at add/update time), so the risk is low, but the
+	// guard here protects equalWithGuard regardless.
+	if as, ok := a.(*SetValue); ok {
+		if bs, ok := b.(*SetValue); ok {
+			key := collectionPair{as, bs}
+			if visited[key] {
+				return true
+			}
+			visited[key] = true
+			defer delete(visited, key)
+			if len(as.Elements) != len(bs.Elements) {
+				return false
+			}
+			for k, av := range as.Elements {
+				bv, exists := bs.Elements[k]
+				if !exists || !equalWithGuard(av, bv, visited) {
+					return false
+				}
+			}
+			return true
+		}
+		return false
+	}
+
 	cmp, err := Compare(a, b)
 	if err != nil {
-		// For non-comparable types, check identity
+		// For non-comparable types (functions, builtins, services) fall back to
+		// pointer identity — these are not value types in SLOP.
 		return a == b
 	}
 	return cmp == 0

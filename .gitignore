@@ -35,3 +35,6 @@ website/build/
 website/.docusaurus/
 website/.cache-loader/
 website/package-lock.json
+
+# worktrack loop state (per-clone, lease_holder carries email)
+.worktrack/

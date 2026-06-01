@@ -84,6 +84,7 @@ type Config struct {
 	MaxAPICalls   int64   // Maximum API calls (0 = unlimited)
 	MaxDuration   int64   // Maximum execution time in seconds (0 = unlimited)
 	MaxCost       float64 // Maximum cost in dollars (0 = unlimited)
+	MaxCallDepth  int64   // Maximum nested call depth (0 = DefaultMaxCallDepth)
 	CheckpointDir string  // Directory for checkpoint files (empty = checkpoints disabled)
 }
 
@@ -95,6 +96,7 @@ func NewRuntimeWithConfig(cfg Config) *Runtime {
 		MaxAPICalls:   cfg.MaxAPICalls,
 		MaxDuration:   cfg.MaxDuration,
 		MaxCost:       cfg.MaxCost,
+		MaxCallDepth:  cfg.MaxCallDepth,
 	}
 	ctx := evaluator.NewContextWithLimits(limits)
 	return NewRuntimeWithContext(ctx)
