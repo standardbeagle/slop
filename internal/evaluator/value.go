@@ -3,6 +3,7 @@ package evaluator
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/standardbeagle/slop/internal/ast"
@@ -116,9 +117,37 @@ func (m *MapValue) Delete(key string) {
 }
 
 func (m *MapValue) Type() string { return "map" }
-func (m *MapValue) String() string {
-	pairs := make([]string, 0, len(m.Pairs))
+
+// OrderedKeys returns the map keys in insertion order. It self-heals when the
+// Order slice is out of sync with Pairs (e.g. a MapValue built directly via a
+// struct literal without maintaining Order): known keys keep their order and
+// any missing keys are appended in sorted order for deterministic output.
+func (m *MapValue) OrderedKeys() []string {
+	if len(m.Order) == len(m.Pairs) {
+		return m.Order
+	}
+	seen := make(map[string]bool, len(m.Order))
+	keys := make([]string, 0, len(m.Pairs))
 	for _, k := range m.Order {
+		if _, ok := m.Pairs[k]; ok && !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
+	}
+	missing := make([]string, 0)
+	for k := range m.Pairs {
+		if !seen[k] {
+			missing = append(missing, k)
+		}
+	}
+	sort.Strings(missing)
+	return append(keys, missing...)
+}
+
+func (m *MapValue) String() string {
+	keys := m.OrderedKeys()
+	pairs := make([]string, 0, len(keys))
+	for _, k := range keys {
 		v := m.Pairs[k]
 		pairs = append(pairs, fmt.Sprintf("%s: %s", k, v.String()))
 	}
@@ -401,6 +430,44 @@ func Compare(a, b Value) (int, error) {
 
 // Equal checks if two values are equal.
 func Equal(a, b Value) bool {
+	// Deep equality for container types (Compare rejects these as non-ordered).
+	switch av := a.(type) {
+	case *ListValue:
+		bv, ok := b.(*ListValue)
+		if !ok || len(av.Elements) != len(bv.Elements) {
+			return false
+		}
+		for i := range av.Elements {
+			if !Equal(av.Elements[i], bv.Elements[i]) {
+				return false
+			}
+		}
+		return true
+	case *MapValue:
+		bv, ok := b.(*MapValue)
+		if !ok || len(av.Pairs) != len(bv.Pairs) {
+			return false
+		}
+		for k, v := range av.Pairs {
+			ov, exists := bv.Pairs[k]
+			if !exists || !Equal(v, ov) {
+				return false
+			}
+		}
+		return true
+	case *SetValue:
+		bv, ok := b.(*SetValue)
+		if !ok || len(av.Elements) != len(bv.Elements) {
+			return false
+		}
+		for k := range av.Elements {
+			if _, exists := bv.Elements[k]; !exists {
+				return false
+			}
+		}
+		return true
+	}
+
 	cmp, err := Compare(a, b)
 	if err != nil {
 		// For non-comparable types, check identity

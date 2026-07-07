@@ -431,21 +431,25 @@ func builtinGroup(args []evaluator.Value, _ map[string]evaluator.Value) (evaluat
 	}
 
 	groups := make(map[string][]evaluator.Value)
+	var order []string
 	for _, item := range list {
 		keyVal, err := callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
 		key := keyVal.String()
+		if _, seen := groups[key]; !seen {
+			order = append(order, key)
+		}
 		groups[key] = append(groups[key], item)
 	}
 
-	result := make(map[string]evaluator.Value)
-	for k, v := range groups {
-		result[k] = &evaluator.ListValue{Elements: v}
+	result := evaluator.NewMapValue()
+	for _, k := range order {
+		result.Set(k, &evaluator.ListValue{Elements: groups[k]})
 	}
 
-	return &evaluator.MapValue{Pairs: result}, nil
+	return result, nil
 }
 
 func builtinGroupBy(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {

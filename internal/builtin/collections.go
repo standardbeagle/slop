@@ -287,11 +287,11 @@ func builtinCopy(args []evaluator.Value, _ map[string]evaluator.Value) (evaluato
 		copy(items, v.Elements)
 		return &evaluator.ListValue{Elements: items}, nil
 	case *evaluator.MapValue:
-		pairs := make(map[string]evaluator.Value, len(v.Pairs))
-		for k, val := range v.Pairs {
-			pairs[k] = val
+		result := evaluator.NewMapValue()
+		for _, k := range v.OrderedKeys() {
+			result.Set(k, v.Pairs[k])
 		}
-		return &evaluator.MapValue{Pairs: pairs}, nil
+		return result, nil
 	case *evaluator.SetValue:
 		items := make(map[string]evaluator.Value, len(v.Elements))
 		for k, val := range v.Elements {
@@ -374,13 +374,14 @@ func builtinKeys(args []evaluator.Value, _ map[string]evaluator.Value) (evaluato
 	if err := requireArgs("keys", args, 1); err != nil {
 		return nil, err
 	}
-	m, err := requireMap("keys", args[0])
-	if err != nil {
-		return nil, err
+	m, ok := args[0].(*evaluator.MapValue)
+	if !ok {
+		return nil, fmt.Errorf("keys() requires map argument, got %s", args[0].Type())
 	}
 
-	items := make([]evaluator.Value, 0, len(m))
-	for k := range m {
+	keys := m.OrderedKeys()
+	items := make([]evaluator.Value, 0, len(keys))
+	for _, k := range keys {
 		items = append(items, &evaluator.StringValue{Value: k})
 	}
 	return &evaluator.ListValue{Elements: items}, nil
@@ -390,14 +391,15 @@ func builtinValues(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 	if err := requireArgs("values", args, 1); err != nil {
 		return nil, err
 	}
-	m, err := requireMap("values", args[0])
-	if err != nil {
-		return nil, err
+	m, ok := args[0].(*evaluator.MapValue)
+	if !ok {
+		return nil, fmt.Errorf("values() requires map argument, got %s", args[0].Type())
 	}
 
-	items := make([]evaluator.Value, 0, len(m))
-	for _, v := range m {
-		items = append(items, v)
+	keys := m.OrderedKeys()
+	items := make([]evaluator.Value, 0, len(keys))
+	for _, k := range keys {
+		items = append(items, m.Pairs[k])
 	}
 	return &evaluator.ListValue{Elements: items}, nil
 }
@@ -406,17 +408,18 @@ func builtinItems(args []evaluator.Value, _ map[string]evaluator.Value) (evaluat
 	if err := requireArgs("items", args, 1); err != nil {
 		return nil, err
 	}
-	m, err := requireMap("items", args[0])
-	if err != nil {
-		return nil, err
+	m, ok := args[0].(*evaluator.MapValue)
+	if !ok {
+		return nil, fmt.Errorf("items() requires map argument, got %s", args[0].Type())
 	}
 
-	items := make([]evaluator.Value, 0, len(m))
-	for k, v := range m {
+	keys := m.OrderedKeys()
+	items := make([]evaluator.Value, 0, len(keys))
+	for _, k := range keys {
 		pair := &evaluator.ListValue{
 			Elements: []evaluator.Value{
 				&evaluator.StringValue{Value: k},
-				v,
+				m.Pairs[k],
 			},
 		}
 		items = append(items, pair)
@@ -465,19 +468,19 @@ func builtinMerge(args []evaluator.Value, _ map[string]evaluator.Value) (evaluat
 		return nil, err
 	}
 
-	result := make(map[string]evaluator.Value)
+	result := evaluator.NewMapValue()
 
 	for _, arg := range args {
-		m, err := requireMap("merge", arg)
-		if err != nil {
-			return nil, err
+		m, ok := arg.(*evaluator.MapValue)
+		if !ok {
+			return nil, fmt.Errorf("merge() requires map argument, got %s", arg.Type())
 		}
-		for k, v := range m {
-			result[k] = v
+		for _, k := range m.OrderedKeys() {
+			result.Set(k, m.Pairs[k])
 		}
 	}
 
-	return &evaluator.MapValue{Pairs: result}, nil
+	return result, nil
 }
 
 // Set functions
