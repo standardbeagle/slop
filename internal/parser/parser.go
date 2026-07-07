@@ -114,6 +114,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(lexer.AND, p.parseInfixExpression)
 	p.registerInfix(lexer.OR, p.parseInfixExpression)
 	p.registerInfix(lexer.IN, p.parseInfixExpression)
+	p.registerInfix(lexer.NOT, p.parseNotInfix)
 	p.registerInfix(lexer.PIPE, p.parsePipelineExpression)
 	p.registerInfix(lexer.LPAREN, p.parseCallExpression)
 	p.registerInfix(lexer.LBRACK, p.parseIndexExpression)
@@ -612,6 +613,23 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 	p.nextToken()
 	expression.Right = p.parseExpression(PREFIX)
 
+	return expression
+}
+
+// parseNotInfix handles the "not in" membership operator. The only valid infix
+// use of "not" is "not in"; anything else is a parse error.
+func (p *Parser) parseNotInfix(left ast.Expression) ast.Expression {
+	tok := p.curToken // NOT
+	if !p.expectPeek(lexer.IN) {
+		return nil
+	}
+	expression := &ast.InfixExpression{
+		Token:    tok,
+		Operator: "not in",
+		Left:     left,
+	}
+	p.nextToken()
+	expression.Right = p.parseExpression(MEMBERSHIP)
 	return expression
 }
 

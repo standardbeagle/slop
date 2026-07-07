@@ -219,7 +219,7 @@ func builtinSorted(args []evaluator.Value, kwargs map[string]evaluator.Value) (e
 		}
 	}
 
-	// Get key function if provided
+	// Get key function if provided (positional or key: kwarg)
 	var keyFn evaluator.Value
 	if len(args) == 2 {
 		keyFn = args[1]
@@ -227,22 +227,37 @@ func builtinSorted(args []evaluator.Value, kwargs map[string]evaluator.Value) (e
 	if kv, ok := kwargs["key"]; ok {
 		keyFn = kv
 	}
+	if keyFn != nil {
+		if err := requireCallable("sorted", keyFn); err != nil {
+			return nil, err
+		}
+	}
 
-	// Sort with comparison
+	// Precompute sort keys so the key function is called once per element
+	// rather than inside the comparator.
+	keys := items
+	if keyFn != nil {
+		keys = make([]evaluator.Value, len(items))
+		for i, item := range items {
+			k, err := callFunction(keyFn, []evaluator.Value{item})
+			if err != nil {
+				return nil, err
+			}
+			keys[i] = k
+		}
+	}
+
+	// Sort item indices by their keys, keeping items and keys aligned.
+	idx := make([]int, len(items))
+	for i := range idx {
+		idx[i] = i
+	}
 	var sortErr error
-	sort.SliceStable(items, func(i, j int) bool {
+	sort.SliceStable(idx, func(a, b int) bool {
 		if sortErr != nil {
 			return false
 		}
-		a, b := items[i], items[j]
-
-		// Apply key function if provided
-		if keyFn != nil {
-			// This is simplified - in real implementation we'd need to call the function
-			// through the evaluator
-		}
-
-		cmp, err := evaluator.Compare(a, b)
+		cmp, err := evaluator.Compare(keys[idx[a]], keys[idx[b]])
 		if err != nil {
 			sortErr = err
 			return false
@@ -252,12 +267,15 @@ func builtinSorted(args []evaluator.Value, kwargs map[string]evaluator.Value) (e
 		}
 		return cmp < 0
 	})
-
 	if sortErr != nil {
 		return nil, sortErr
 	}
 
-	return &evaluator.ListValue{Elements: items}, nil
+	sortedItems := make([]evaluator.Value, len(items))
+	for i, j := range idx {
+		sortedItems[i] = items[j]
+	}
+	return &evaluator.ListValue{Elements: sortedItems}, nil
 }
 
 func builtinReversed(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {

@@ -542,6 +542,12 @@ func (e *Evaluator) binaryOp(op string, left, right Value) (Value, error) {
 		}
 	case "in":
 		return e.evalInOperator(left, right)
+	case "not in":
+		res, err := e.evalInOperator(left, right)
+		if err != nil {
+			return nil, err
+		}
+		return NewBool(!res.IsTruthy()), nil
 	}
 
 	// Numeric operators

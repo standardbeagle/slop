@@ -63,3 +63,22 @@ func TestBugSlice(t *testing.T) {
 		}
 	}
 }
+
+func TestBugNotIn(t *testing.T) {
+	cases := map[string]bool{
+		`3 not in [1, 2, 4]`:  true,
+		`2 not in [1, 2, 4]`:  false,
+		`"x" not in "text"`:   false,
+		`"z" not in "text"`:   true,
+	}
+	for src, want := range cases {
+		got := testEval(t, src)
+		b, ok := got.(*BoolValue)
+		if !ok {
+			t.Fatalf("%s: not bool: %T", src, got)
+		}
+		if b.Value != want {
+			t.Errorf("%s = %v, want %v", src, b.Value, want)
+		}
+	}
+}

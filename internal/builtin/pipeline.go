@@ -68,6 +68,28 @@ func callFunction(fn evaluator.Value, args []evaluator.Value) (evaluator.Value, 
 	return pipelineFuncCaller.CallFunction(fn, args)
 }
 
+// countAndList extracts an integer count and a list from a two-argument call,
+// accepting either order. Pipeline dispatch (`xs | take(n)`) passes the list
+// first while direct calls (`take(n, xs)`) pass the count first; both are valid.
+func countAndList(name string, args []evaluator.Value) (int64, []evaluator.Value, error) {
+	switch a := args[0].(type) {
+	case *evaluator.ListValue:
+		n, err := requireInt(name, args[1])
+		if err != nil {
+			return 0, nil, err
+		}
+		return n, a.Elements, nil
+	case *evaluator.IntValue:
+		list, err := requireList(name, args[1])
+		if err != nil {
+			return 0, nil, err
+		}
+		return a.Value, list, nil
+	default:
+		return 0, nil, fmt.Errorf("%s() requires a list and an int, got %s and %s", name, args[0].Type(), args[1].Type())
+	}
+}
+
 // Transformation
 
 func builtinMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
@@ -274,12 +296,7 @@ func builtinTake(args []evaluator.Value, _ map[string]evaluator.Value) (evaluato
 		return nil, err
 	}
 
-	n, err := requireInt("take", args[0])
-	if err != nil {
-		return nil, err
-	}
-
-	list, err := requireList("take", args[1])
+	n, list, err := countAndList("take", args)
 	if err != nil {
 		return nil, err
 	}
@@ -299,12 +316,7 @@ func builtinDrop(args []evaluator.Value, _ map[string]evaluator.Value) (evaluato
 		return nil, err
 	}
 
-	n, err := requireInt("drop", args[0])
-	if err != nil {
-		return nil, err
-	}
-
-	list, err := requireList("drop", args[1])
+	n, list, err := countAndList("drop", args)
 	if err != nil {
 		return nil, err
 	}
@@ -501,17 +513,12 @@ func builtinChunk(args []evaluator.Value, _ map[string]evaluator.Value) (evaluat
 		return nil, err
 	}
 
-	n, err := requireInt("chunk", args[0])
+	n, list, err := countAndList("chunk", args)
 	if err != nil {
 		return nil, err
 	}
 	if n <= 0 {
 		return nil, fmt.Errorf("chunk() size must be positive")
-	}
-
-	list, err := requireList("chunk", args[1])
-	if err != nil {
-		return nil, err
 	}
 
 	result := make([]evaluator.Value, 0)
@@ -531,17 +538,12 @@ func builtinWindow(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 		return nil, err
 	}
 
-	n, err := requireInt("window", args[0])
+	n, list, err := countAndList("window", args)
 	if err != nil {
 		return nil, err
 	}
 	if n <= 0 {
 		return nil, fmt.Errorf("window() size must be positive")
-	}
-
-	list, err := requireList("window", args[1])
-	if err != nil {
-		return nil, err
 	}
 
 	result := make([]evaluator.Value, 0)
