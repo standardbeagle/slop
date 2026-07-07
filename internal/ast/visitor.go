@@ -17,6 +17,7 @@ type Visitor interface {
 	VisitTryStatement(*TryStatement) error
 	VisitBreakStatement(*BreakStatement) error
 	VisitContinueStatement(*ContinueStatement) error
+	VisitPauseStatement(*PauseStatement) error
 
 	// Expressions
 	VisitIdentifier(*Identifier) error
@@ -253,6 +254,12 @@ func walkNodeSwitch(v Visitor, node Node) error {
 
 	case *ContinueStatement:
 		return v.VisitContinueStatement(n)
+
+	case *PauseStatement:
+		if err := v.VisitPauseStatement(n); err != nil {
+			return err
+		}
+		return WalkOptional(v, n.Message)
 
 	// Expressions - simple leaf nodes (no traversal needed)
 	case *Identifier:
@@ -492,6 +499,7 @@ func (b *BaseVisitor) VisitStopStatement(*StopStatement) error         { return 
 func (b *BaseVisitor) VisitTryStatement(*TryStatement) error           { return nil }
 func (b *BaseVisitor) VisitBreakStatement(*BreakStatement) error       { return nil }
 func (b *BaseVisitor) VisitContinueStatement(*ContinueStatement) error { return nil }
+func (b *BaseVisitor) VisitPauseStatement(*PauseStatement) error       { return nil }
 func (b *BaseVisitor) VisitIdentifier(*Identifier) error               { return nil }
 func (b *BaseVisitor) VisitIntegerLiteral(*IntegerLiteral) error       { return nil }
 func (b *BaseVisitor) VisitFloatLiteral(*FloatLiteral) error           { return nil }

@@ -162,7 +162,7 @@ func (p *Parser) isIdentOrKeyword() bool {
 		lexer.IF, lexer.ELIF, lexer.ELSE,
 		lexer.FOR, lexer.IN, lexer.WITH,
 		lexer.MATCH, lexer.DEF, lexer.RETURN,
-		lexer.EMIT, lexer.STOP,
+		lexer.EMIT, lexer.STOP, lexer.PAUSE,
 		lexer.TRY, lexer.CATCH,
 		lexer.BREAK, lexer.CONTINUE,
 		lexer.RANGE:
@@ -484,6 +484,8 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseBreakStatement()
 	case lexer.CONTINUE:
 		return p.parseContinueStatement()
+	case lexer.PAUSE:
+		return p.parsePauseStatement()
 	default:
 		return p.parseAssignmentOrExpressionStatement()
 	}
@@ -1590,6 +1592,22 @@ func (p *Parser) parseContinueStatement() ast.Statement {
 	if p.peekTokenIs(lexer.NEWLINE) {
 		p.nextToken()
 	}
+	return stmt
+}
+
+func (p *Parser) parsePauseStatement() ast.Statement {
+	stmt := &ast.PauseStatement{Token: p.curToken}
+
+	// Check for optional message - pause "checkpoint name"
+	if !p.peekTokenIs(lexer.NEWLINE) && !p.peekTokenIs(lexer.EOF) && !p.peekTokenIs(lexer.DEDENT) {
+		p.nextToken()
+		stmt.Message = p.parseExpression(LOWEST)
+	}
+
+	if p.peekTokenIs(lexer.NEWLINE) {
+		p.nextToken()
+	}
+
 	return stmt
 }
 

@@ -100,12 +100,16 @@ type Context struct {
 	Emitted []Value
 
 	// Control flow flags
-	returnValue   Value
-	shouldReturn  bool
-	shouldBreak   bool
+	returnValue    Value
+	shouldReturn   bool
+	shouldBreak    bool
 	shouldContinue bool
-	shouldStop    bool
-	rollback      bool
+	shouldStop     bool
+	rollback       bool
+
+	// Pause state for checkpointing
+	shouldPause   bool
+	pauseMessage  string
 }
 
 // ExecutionLimits defines limits on script execution.
@@ -406,6 +410,28 @@ func (c *Context) NeedsRollback() bool {
 	return c.rollback
 }
 
+// SetPause sets the pause flag with an optional message.
+func (c *Context) SetPause(message string) {
+	c.shouldPause = true
+	c.pauseMessage = message
+}
+
+// ClearPause clears the pause flag.
+func (c *Context) ClearPause() {
+	c.shouldPause = false
+	c.pauseMessage = ""
+}
+
+// ShouldPause checks if execution should pause for checkpointing.
+func (c *Context) ShouldPause() bool {
+	return c.shouldPause
+}
+
+// GetPauseMessage returns the pause message (checkpoint name).
+func (c *Context) GetPauseMessage() string {
+	return c.pauseMessage
+}
+
 // IncrementIterations increments the iteration counter and checks limits.
 func (c *Context) IncrementIterations() error {
 	c.Limits.IterationCount++
@@ -444,5 +470,5 @@ func (c *Context) AddCost(cost float64) error {
 
 // ShouldInterrupt checks if execution should be interrupted.
 func (c *Context) ShouldInterrupt() bool {
-	return c.shouldStop || c.shouldReturn || c.shouldBreak || c.shouldContinue
+	return c.shouldStop || c.shouldReturn || c.shouldBreak || c.shouldContinue || c.shouldPause
 }

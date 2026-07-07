@@ -467,6 +467,20 @@ func (l *Lexer) readIdentifier() string {
 	for isLetter(l.ch) || isDigit(l.ch) {
 		l.readChar()
 	}
+	// If the word so far is a keyword, don't consume hyphens.
+	// Keywords (for, if, true, not, etc.) should never start a hyphenated identifier.
+	word := l.input[start:l.pos]
+	if _, isKeyword := keywords[word]; isKeyword {
+		return word
+	}
+	// Context-aware hyphen: consume '-' followed by a letter as part of the identifier.
+	// "dart-query" → single IDENT. "a-1" → IDENT MINUS INT. "a - b" → IDENT MINUS IDENT.
+	for l.ch == '-' && isLetter(l.peekChar()) {
+		l.readChar() // consume '-'
+		for isLetter(l.ch) || isDigit(l.ch) {
+			l.readChar()
+		}
+	}
 	return l.input[start:l.pos]
 }
 

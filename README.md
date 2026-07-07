@@ -108,6 +108,35 @@ response = llm.call({
 emit response
 ```
 
+### External Service Integration
+
+Create custom services accessible from SLOP scripts:
+
+```go
+// Go code
+type MemoryService struct{}
+
+func (m *MemoryService) Call(method string, args []slop.Value, kwargs map[string]slop.Value) (slop.Value, error) {
+    switch method {
+    case "read":
+        // Handle read
+        return slop.NewStringValue("stored value"), nil
+    default:
+        return nil, fmt.Errorf("unknown method: %s", method)
+    }
+}
+
+// Register with runtime
+rt := slop.NewRuntime()
+rt.RegisterExternalService("memory", &MemoryService{})
+```
+
+```slop
+# SLOP script
+data = memory.read(key: "my_key")
+emit data
+```
+
 ### Schema Validation
 
 Validate data automatically:

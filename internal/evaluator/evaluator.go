@@ -3,6 +3,7 @@ package evaluator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/standardbeagle/slop/internal/ast"
@@ -68,6 +69,8 @@ func evalNode(e *Evaluator, node ast.Node) (Value, error) {
 	case *ast.ContinueStatement:
 		e.ctx.SetContinue()
 		return NONE, nil
+	case *ast.PauseStatement:
+		return e.evalPauseStatement(node)
 
 	// Conditional and loop statements
 	case *ast.IfStatement:
@@ -173,7 +176,7 @@ func (e *Evaluator) evalProgram(program *ast.Program) (Value, error) {
 			result, _ = e.ctx.GetReturn()
 			break
 		}
-		if e.ctx.ShouldStop() {
+		if e.ctx.ShouldStop() || e.ctx.ShouldPause() {
 			break
 		}
 	}
@@ -226,7 +229,7 @@ func (e *Evaluator) evalProgramWithModules(program *ast.Program) (Value, error) 
 				result, _ = e.ctx.GetReturn()
 				return result, nil
 			}
-			if e.ctx.ShouldStop() {
+			if e.ctx.ShouldStop() || e.ctx.ShouldPause() {
 				return result, nil
 			}
 		}
@@ -266,7 +269,37 @@ func (e *Evaluator) evalIdentifier(node *ast.Identifier) (Value, error) {
 		return val, nil
 	}
 
+	// Fallback: if hyphenated and all parts are in scope, treat as subtraction
+	if strings.Contains(node.Value, "-") {
+		return e.evalHyphenatedFallback(node.Value)
+	}
+
 	return nil, fmt.Errorf("undefined variable: %s", node.Value)
+}
+
+func (e *Evaluator) evalHyphenatedFallback(name string) (Value, error) {
+	parts := strings.Split(name, "-")
+	values := make([]Value, len(parts))
+	for i, part := range parts {
+		val, ok := e.ctx.Scope.Get(part)
+		if !ok {
+			val, ok = e.ctx.Globals.Get(part)
+		}
+		if !ok {
+			return nil, fmt.Errorf("undefined variable: %s", name)
+		}
+		values[i] = val
+	}
+	// Left-to-right subtraction: a-b-c → (a - b) - c
+	result := values[0]
+	for i := 1; i < len(values); i++ {
+		var err error
+		result, err = e.binaryOp("-", result, values[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 func (e *Evaluator) evalAssignment(node *ast.AssignStatement) (Value, error) {
@@ -1246,7 +1279,7 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 		if e.ctx.ShouldContinue() {
 			e.ctx.ClearContinue()
 		}
-		if e.ctx.ShouldReturn() || e.ctx.ShouldStop() {
+		if e.ctx.ShouldReturn() || e.ctx.ShouldStop() || e.ctx.ShouldPause() {
 			break
 		}
 
@@ -1485,6 +1518,20 @@ func (e *Evaluator) evalEmitStatement(node *ast.EmitStatement) (Value, error) {
 
 func (e *Evaluator) evalStopStatement(node *ast.StopStatement) (Value, error) {
 	e.ctx.SetStop(node.Rollback)
+	return NONE, nil
+}
+
+func (e *Evaluator) evalPauseStatement(node *ast.PauseStatement) (Value, error) {
+	var message string
+	if node.Message != nil {
+		msgVal, err := e.Eval(node.Message)
+		if err != nil {
+			return nil, err
+		}
+		// Use the String() method from the Value interface
+		message = msgVal.String()
+	}
+	e.ctx.SetPause(message)
 	return NONE, nil
 }
 

@@ -3,6 +3,7 @@ package slop
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/standardbeagle/slop/internal/ast"
 	"github.com/standardbeagle/slop/internal/builtin"
@@ -14,10 +15,14 @@ import (
 
 // Runtime is the main entry point for executing SLOP scripts.
 type Runtime struct {
-	evaluator  *evaluator.Evaluator
-	registry   *builtin.Registry
-	mcpManager *runtime.MCPManager
-	llmService *runtime.LLMService
+	evaluator        *evaluator.Evaluator
+	registry         *builtin.Registry
+	mcpManager       *runtime.MCPManager
+	llmService       *runtime.LLMService
+	resumable        *evaluator.ResumableEvaluator
+	checkpointDir    string
+	currentScript    string
+	currentProgram   *ast.Program
 }
 
 // NewRuntime creates a new SLOP runtime with all built-in functions registered.
@@ -79,6 +84,7 @@ type Config struct {
 	MaxAPICalls   int64   // Maximum API calls (0 = unlimited)
 	MaxDuration   int64   // Maximum execution time in seconds (0 = unlimited)
 	MaxCost       float64 // Maximum cost in dollars (0 = unlimited)
+	CheckpointDir string  // Directory for checkpoint files (empty = checkpoints disabled)
 }
 
 // NewRuntimeWithConfig creates a runtime with execution limits.
@@ -180,6 +186,106 @@ func (r *Runtime) DisconnectMCP(name string) error {
 // Close closes all MCP connections and releases resources.
 func (r *Runtime) Close() error {
 	return r.mcpManager.CloseAll()
+}
+
+// SetCheckpointDir sets the directory for checkpoint files.
+// This enables checkpoint support for the runtime.
+func (r *Runtime) SetCheckpointDir(dir string) {
+	r.checkpointDir = dir
+
+	// Create a resumable evaluator using the existing evaluator's context
+	// This ensures proper scope chain connectivity to globals and preserves services/builtins
+	r.resumable = evaluator.NewResumableEvaluatorWithEvaluator(r.evaluator, dir)
+}
+
+// ExecuteWithCheckpoints parses and runs a SLOP script with checkpoint support.
+// If a pause statement is encountered, it saves a checkpoint and returns.
+// Returns: result value, checkpoint path (empty if completed), error
+func (r *Runtime) ExecuteWithCheckpoints(source string) (evaluator.Value, string, error) {
+	if r.checkpointDir == "" {
+		// No checkpoint dir - fall back to regular execution
+		result, err := r.Execute(source)
+		return result, "", err
+	}
+
+	// Ensure resumable evaluator is set up
+	if r.resumable == nil {
+		r.SetCheckpointDir(r.checkpointDir)
+	}
+
+	// Parse the source
+	program, err := r.Parse(source)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Store for potential resume
+	r.currentScript = source
+	r.currentProgram = program
+	r.resumable.SetProgram(program, source)
+
+	// Execute with checkpoint support
+	return r.resumable.EvalWithCheckpoints(program)
+}
+
+// ResumeFromCheckpoint resumes execution from a checkpoint file.
+// Returns: result value, new checkpoint path (empty if completed), error
+func (r *Runtime) ResumeFromCheckpoint(checkpointPath string) (evaluator.Value, string, error) {
+	if r.checkpointDir == "" {
+		return nil, "", fmt.Errorf("checkpoint directory not configured")
+	}
+
+	// Ensure resumable evaluator is set up
+	if r.resumable == nil {
+		r.SetCheckpointDir(r.checkpointDir)
+	}
+
+	// Get builtins and services for restoration
+	// Note: Builtins stored in checkpoint will be restored if they exist in globals
+	builtins := make(map[string]*evaluator.BuiltinValue)
+	services := r.evaluator.Context().Services
+
+	// Resume execution
+	return r.resumable.ResumeFromCheckpoint(checkpointPath, builtins, services)
+}
+
+// ListCheckpoints returns all checkpoints in the checkpoint directory.
+func (r *Runtime) ListCheckpoints() ([]evaluator.CheckpointInfo, error) {
+	if r.checkpointDir == "" {
+		return nil, fmt.Errorf("checkpoint directory not configured")
+	}
+
+	if r.resumable == nil {
+		r.SetCheckpointDir(r.checkpointDir)
+	}
+
+	return r.resumable.GetCheckpointManager().ListCheckpoints()
+}
+
+// IsPaused returns true if the runtime is paused at a checkpoint.
+func (r *Runtime) IsPaused() bool {
+	if r.resumable == nil {
+		return false
+	}
+	return r.resumable.Context().ShouldPause()
+}
+
+// GetPauseMessage returns the pause message if paused.
+func (r *Runtime) GetPauseMessage() string {
+	if r.resumable == nil {
+		return ""
+	}
+	return r.resumable.Context().GetPauseMessage()
+}
+
+// SetCurrentProgram sets the current program and script for checkpoint validation.
+// This is used when resuming from a checkpoint.
+func (r *Runtime) SetCurrentProgram(program *ast.Program, script string) {
+	r.currentProgram = program
+	r.currentScript = script
+	if r.resumable != nil {
+		r.resumable.SetProgram(program, script)
+	}
 }
 
 // SetLLMClient sets a custom LLM client for the runtime.

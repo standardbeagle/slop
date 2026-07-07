@@ -633,6 +633,36 @@ func (cs *ContinueStatement) WalkNode(v Visitor) error {
 	return v.VisitContinueStatement(cs)
 }
 
+// PauseStatement represents the pause statement for checkpointing.
+// Syntax: pause or pause "optional message"
+type PauseStatement struct {
+	Token   lexer.Token
+	Message Expression // Optional message/checkpoint name
+}
+
+func (ps *PauseStatement) node()            {}
+func (ps *PauseStatement) statementNode()   {}
+func (ps *PauseStatement) TokenLiteral() string { return ps.Token.Literal }
+func (ps *PauseStatement) String() string {
+	if ps.Message != nil {
+		return "pause " + ps.Message.String()
+	}
+	return "pause"
+}
+
+// WalkNode implements the Walkable interface for PauseStatement.
+func (ps *PauseStatement) WalkNode(v Visitor) error {
+	if err := v.VisitPauseStatement(ps); err != nil {
+		return err
+	}
+	if ps.Message != nil {
+		if err := Walk(v, ps.Message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ============================================================================
 // Expressions
 // ============================================================================

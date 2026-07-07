@@ -2,8 +2,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/standardbeagle/slop/internal/analyzer"
 	"github.com/standardbeagle/slop/internal/evaluator"
@@ -29,6 +31,10 @@ func main() {
 		checkCmd(os.Args[2:])
 	case "plan":
 		planCmd(os.Args[2:])
+	case "resume":
+		resumeCmd(os.Args[2:])
+	case "checkpoints":
+		checkpointsCmd(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Printf("slop version %s\n", version)
 	case "help", "-h", "--help":
@@ -47,14 +53,24 @@ Usage:
   slop <command> [arguments]
 
 Commands:
-  run <file>      Execute a SLOP script
-  check <file>    Validate a script without running it
-  plan <file>     Show execution bounds analysis
-  version         Print version information
-  help            Show this help message
+  run <file>           Execute a SLOP script
+  check <file>         Validate a script without running it
+  plan <file>          Show execution bounds analysis
+  resume <checkpoint>  Resume execution from a checkpoint
+  checkpoints <dir>    List available checkpoints
+  version              Print version information
+  help                 Show this help message
+
+Run Options:
+  --checkpoint-dir <dir>  Enable checkpoints in specified directory
+  --max-iterations <n>    Maximum loop iterations
+  --max-llm-calls <n>     Maximum LLM calls
 
 Examples:
   slop run script.slop
+  slop run script.slop --checkpoint-dir ./checkpoints
+  slop resume ./checkpoints/my-checkpoint.json
+  slop checkpoints ./checkpoints
   slop check script.slop
   slop plan script.slop
 
@@ -93,19 +109,33 @@ func runCmd(args []string) {
 				}
 				i++
 			}
+		case "--checkpoint-dir":
+			if i+1 < len(args) {
+				cfg.CheckpointDir = args[i+1]
+				i++
+			}
 		}
 	}
 
 	// Create runtime
 	var rt *slop.Runtime
-	if cfg.MaxIterations > 0 || cfg.MaxLLMCalls > 0 {
+	if cfg.MaxIterations > 0 || cfg.MaxLLMCalls > 0 || cfg.CheckpointDir != "" {
 		rt = slop.NewRuntimeWithConfig(cfg)
 	} else {
 		rt = slop.NewRuntime()
 	}
 
-	// Execute
-	result, err := rt.Execute(string(source))
+	// Execute with or without checkpoints
+	var result evaluator.Value
+	var checkpointPath string
+
+	if cfg.CheckpointDir != "" {
+		rt.SetCheckpointDir(cfg.CheckpointDir)
+		result, checkpointPath, err = rt.ExecuteWithCheckpoints(string(source))
+	} else {
+		result, err = rt.Execute(string(source))
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -120,6 +150,124 @@ func runCmd(args []string) {
 	} else if result != nil {
 		printValue(result)
 	}
+
+	// If paused, print checkpoint info
+	if checkpointPath != "" {
+		fmt.Fprintf(os.Stderr, "\nScript paused. Checkpoint saved to: %s\n", checkpointPath)
+		if rt.GetPauseMessage() != "" {
+			fmt.Fprintf(os.Stderr, "Message: %s\n", rt.GetPauseMessage())
+		}
+		fmt.Fprintf(os.Stderr, "Resume with: slop resume %s\n", checkpointPath)
+	}
+}
+
+func resumeCmd(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: missing checkpoint file")
+		fmt.Fprintln(os.Stderr, "Usage: slop resume <checkpoint>")
+		os.Exit(1)
+	}
+
+	checkpointPath := args[0]
+
+	// Read checkpoint to get the script
+	data, err := os.ReadFile(checkpointPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading checkpoint: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Parse checkpoint to get script and checkpoint dir
+	var checkpoint struct {
+		Script string `json:"script"`
+	}
+	if err := parseJSON(data, &checkpoint); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing checkpoint: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get checkpoint directory from path
+	checkpointDir := filepath.Dir(checkpointPath)
+
+	// Create runtime with checkpoint support
+	rt := slop.NewRuntime()
+	rt.SetCheckpointDir(checkpointDir)
+
+	// Set the script source for validation
+	program, err := rt.Parse(checkpoint.Script)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing script from checkpoint: %v\n", err)
+		os.Exit(1)
+	}
+	rt.SetCurrentProgram(program, checkpoint.Script)
+
+	// Resume from checkpoint
+	result, newCheckpointPath, err := rt.ResumeFromCheckpoint(checkpointPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resuming: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print emitted values
+	emitted := rt.Emitted()
+	if len(emitted) > 0 {
+		for _, v := range emitted {
+			printValue(v)
+		}
+	} else if result != nil {
+		printValue(result)
+	}
+
+	// If paused again, print checkpoint info
+	if newCheckpointPath != "" {
+		fmt.Fprintf(os.Stderr, "\nScript paused again. Checkpoint saved to: %s\n", newCheckpointPath)
+		if rt.GetPauseMessage() != "" {
+			fmt.Fprintf(os.Stderr, "Message: %s\n", rt.GetPauseMessage())
+		}
+		fmt.Fprintf(os.Stderr, "Resume with: slop resume %s\n", newCheckpointPath)
+	}
+}
+
+func checkpointsCmd(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: missing checkpoint directory")
+		fmt.Fprintln(os.Stderr, "Usage: slop checkpoints <dir>")
+		os.Exit(1)
+	}
+
+	checkpointDir := args[0]
+
+	// Create runtime with checkpoint support
+	rt := slop.NewRuntime()
+	rt.SetCheckpointDir(checkpointDir)
+
+	// List checkpoints
+	checkpoints, err := rt.ListCheckpoints()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing checkpoints: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(checkpoints) == 0 {
+		fmt.Println("No checkpoints found.")
+		return
+	}
+
+	fmt.Printf("Checkpoints in %s:\n\n", checkpointDir)
+	for _, cp := range checkpoints {
+		fmt.Printf("  %s\n", cp.Name)
+		if cp.Message != "" {
+			fmt.Printf("    Message: %s\n", cp.Message)
+		}
+		fmt.Printf("    Line: %d\n", cp.Line)
+		fmt.Printf("    Created: %s\n", cp.CreatedAt)
+		fmt.Printf("    Path: %s\n", cp.Path)
+		fmt.Println()
+	}
+}
+
+func parseJSON(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
 }
 
 func checkCmd(args []string) {
