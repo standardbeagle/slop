@@ -28,9 +28,9 @@ func TestBugSortedKeyFn(t *testing.T) {
 
 func TestBugPipelineChain(t *testing.T) {
 	cases := map[string]string{
-		`[1, 2, 3, 4, 5] | take(2)`:            "[1, 2]",
-		`[1, 2, 3, 4, 5] | drop(2)`:            "[3, 4, 5]",
-		`[1, 2, 3, 4, 5] | chunk(2)`:           "[[1, 2], [3, 4], [5]]",
+		`[1, 2, 3, 4, 5] | take(2)`:                            "[1, 2]",
+		`[1, 2, 3, 4, 5] | drop(2)`:                            "[3, 4, 5]",
+		`[1, 2, 3, 4, 5] | chunk(2)`:                           "[[1, 2], [3, 4], [5]]",
 		`[1, 2, 3, 4] | filter(x -> x > 2) | map(x -> x * 10)`: "[30, 40]",
 	}
 	for src, want := range cases {
@@ -42,8 +42,8 @@ func TestBugPipelineChain(t *testing.T) {
 
 func TestBugSetSemantics(t *testing.T) {
 	cases := map[string]string{
-		`len({1, "1"})`: "2", // distinct types, not collapsed
-		`len({1, 1.0})`: "1", // numeric equals collapse (matches ==)
+		`len({1, "1"})`:     "2", // distinct types, not collapsed
+		`len({1, 1.0})`:     "1", // numeric equals collapse (matches ==)
 		`len({1, 2, 2, 3})`: "3",
 	}
 	for src, want := range cases {

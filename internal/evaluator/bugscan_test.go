@@ -9,12 +9,12 @@ import (
 
 func TestBugListEquality(t *testing.T) {
 	cases := map[string]bool{
-		"[1, 2, 3] == [1, 2, 3]":       true,
-		"[1, 2] == [1, 2, 3]":          false,
-		"[1, [2, 3]] == [1, [2, 3]]":   true,
-		`{"a": 1} == {"a": 1}`:         true,
-		`2 in [1, 2, 3]`:               true,
-		`[2, 3] in [[1, 2], [2, 3]]`:   true,
+		"[1, 2, 3] == [1, 2, 3]":     true,
+		"[1, 2] == [1, 2, 3]":        false,
+		"[1, [2, 3]] == [1, [2, 3]]": true,
+		`{"a": 1} == {"a": 1}`:       true,
+		`2 in [1, 2, 3]`:             true,
+		`[2, 3] in [[1, 2], [2, 3]]`: true,
 	}
 	for src, want := range cases {
 		got := testEval(t, src)
@@ -71,10 +71,10 @@ func TestBugSlice(t *testing.T) {
 
 func TestBugNotIn(t *testing.T) {
 	cases := map[string]bool{
-		`3 not in [1, 2, 4]`:  true,
-		`2 not in [1, 2, 4]`:  false,
-		`"x" not in "text"`:   false,
-		`"z" not in "text"`:   true,
+		`3 not in [1, 2, 4]`: true,
+		`2 not in [1, 2, 4]`: false,
+		`"x" not in "text"`:  false,
+		`"z" not in "text"`:  true,
 	}
 	for src, want := range cases {
 		got := testEval(t, src)
@@ -118,5 +118,20 @@ func TestBugIterationCounterOffByOne(t *testing.T) {
 	}
 	if ctx.Limits.IterationCount != 3 {
 		t.Errorf("IterationCount = %d, want 3", ctx.Limits.IterationCount)
+	}
+}
+
+func TestBugNotInPrecedence(t *testing.T) {
+	// "not in" must bind like "in": arithmetic on the left applies first.
+	cases := map[string]bool{
+		`1 + 1 not in [2]`:    false, // (1+1) not in [2] -> 2 not in [2] -> false
+		`1 + 1 not in [3, 4]`: true,  // 2 not in [3,4] -> true
+		`1 + 1 in [2]`:        true,  // parity check with `in`
+	}
+	for src, want := range cases {
+		got := testEval(t, src).(*BoolValue).Value
+		if got != want {
+			t.Errorf("%s = %v, want %v", src, got, want)
+		}
 	}
 }
