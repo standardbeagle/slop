@@ -368,8 +368,13 @@ func (l *Lexer) NextToken() Token {
 		return l.NextToken()
 
 	case '"', '\'':
-		tok.Type = STRING
-		tok.Literal = l.readString(l.ch)
+		lit, terminated := l.readString(l.ch)
+		if terminated {
+			tok.Type = STRING
+		} else {
+			tok.Type = ILLEGAL
+		}
+		tok.Literal = lit
 
 	default:
 		if isDigit(l.ch) {
@@ -520,18 +525,20 @@ func (l *Lexer) readNumber() (string, bool) {
 	return lit, isFloat
 }
 
-func (l *Lexer) readString(quote rune) string {
+// readString reads a quoted string literal. It returns the decoded contents and
+// whether the string was properly terminated by a matching closing quote.
+func (l *Lexer) readString(quote rune) (string, bool) {
 	var result strings.Builder
 	l.readChar() // skip opening quote
 
 	for {
 		if l.ch == quote {
 			l.readChar() // skip closing quote
-			break
+			return result.String(), true
 		}
 		if l.ch == 0 || l.ch == '\n' {
 			// Unterminated string
-			break
+			return result.String(), false
 		}
 		if l.ch == '\\' {
 			l.readChar()
@@ -561,8 +568,6 @@ func (l *Lexer) readString(quote rune) string {
 		}
 		l.readChar()
 	}
-
-	return result.String()
 }
 
 func (l *Lexer) readModuleHeader() Token {

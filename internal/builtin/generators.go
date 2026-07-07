@@ -138,6 +138,10 @@ func builtinRandomChoices(args []evaluator.Value, _ map[string]evaluator.Value) 
 		return nil, fmt.Errorf("random_choices() cannot choose from empty list")
 	}
 
+	if n < 0 {
+		return nil, fmt.Errorf("random_choices() count must be non-negative")
+	}
+
 	result := make([]evaluator.Value, n)
 	for i := range result {
 		idx := rng.Intn(len(list))
@@ -374,6 +378,10 @@ func builtinGenWords(args []evaluator.Value, _ map[string]evaluator.Value) (eval
 		return nil, err
 	}
 
+	if n < 0 {
+		return nil, fmt.Errorf("gen_words() count must be non-negative")
+	}
+
 	words := make([]string, n)
 	for i := range words {
 		words[i] = loremWords[rng.Intn(len(loremWords))]
@@ -430,6 +438,13 @@ func builtinGenLorem(args []evaluator.Value, kwargs map[string]evaluator.Value) 
 		if iv, ok := wc.(*evaluator.IntValue); ok {
 			wordCount = iv.Value
 		}
+	}
+
+	if wordCount < 0 {
+		return nil, fmt.Errorf("gen_lorem() words must be non-negative")
+	}
+	if wordCount == 0 {
+		return &evaluator.StringValue{Value: ""}, nil
 	}
 
 	words := make([]string, wordCount)

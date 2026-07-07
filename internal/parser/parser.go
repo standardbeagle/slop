@@ -92,6 +92,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(lexer.NONE, p.parseNoneLiteral)
 	p.registerPrefix(lexer.MINUS, p.parsePrefixExpression)
 	p.registerPrefix(lexer.NOT, p.parsePrefixExpression)
+	p.registerPrefix(lexer.ILLEGAL, p.parseIllegal)
 	p.registerPrefix(lexer.LPAREN, p.parseGroupedOrLambda)
 	p.registerPrefix(lexer.LBRACK, p.parseListLiteral)
 	p.registerPrefix(lexer.LBRACE, p.parseMapOrSetLiteral)
@@ -614,6 +615,16 @@ func (p *Parser) parsePrefixExpression() ast.Expression {
 	expression.Right = p.parseExpression(PREFIX)
 
 	return expression
+}
+
+// parseIllegal reports a lexer-produced ILLEGAL token (e.g. an unterminated
+// string literal) as a clear parse error instead of a generic missing-prefix one.
+func (p *Parser) parseIllegal() ast.Expression {
+	p.errors = append(p.errors, &Error{
+		Token:   p.curToken,
+		Message: fmt.Sprintf("invalid or incomplete token: %q", p.curToken.Literal),
+	})
+	return nil
 }
 
 // parseNotInfix handles the "not in" membership operator. The only valid infix

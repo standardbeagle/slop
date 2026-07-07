@@ -230,10 +230,11 @@ func builtinPow(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 
 	result := math.Pow(base, exp)
 
-	// Return int if both args were ints and result is whole number
+	// Return int if both args were ints and the result is a whole number that
+	// fits in int64; otherwise fall back to float to avoid overflow garbage.
 	if _, ok := args[0].(*evaluator.IntValue); ok {
 		if _, ok := args[1].(*evaluator.IntValue); ok {
-			if result == math.Floor(result) {
+			if result == math.Floor(result) && result >= math.MinInt64 && result <= math.MaxInt64 {
 				return &evaluator.IntValue{Value: int64(result)}, nil
 			}
 		}
