@@ -39,3 +39,16 @@ func TestBugPipelineChain(t *testing.T) {
 		}
 	}
 }
+
+func TestBugSetSemantics(t *testing.T) {
+	cases := map[string]string{
+		`len({1, "1"})`: "2", // distinct types, not collapsed
+		`len({1, 1.0})`: "1", // numeric equals collapse (matches ==)
+		`len({1, 2, 2, 3})`: "3",
+	}
+	for src, want := range cases {
+		if got := execStr(t, src); got != want {
+			t.Errorf("%s = %s, want %s", src, got, want)
+		}
+	}
+}

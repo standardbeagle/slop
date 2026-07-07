@@ -428,6 +428,12 @@ func (l *Lexer) processIndentation() []Token {
 			l.readChar()
 		}
 
+		// Ignore carriage returns so CRLF blank lines are treated as blank
+		// rather than emitting spurious DEDENT tokens.
+		for l.ch == '\r' {
+			l.readChar()
+		}
+
 		// Skip blank lines
 		if l.ch == '\n' {
 			l.readChar()

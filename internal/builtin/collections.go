@@ -512,8 +512,7 @@ func builtinAdd(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 		return nil, err
 	}
 
-	key := args[1].String()
-	s[key] = args[1]
+	s[evaluator.SetKey(args[1])] = args[1]
 	return args[0], nil
 }
 
@@ -526,8 +525,7 @@ func builtinDiscard(args []evaluator.Value, _ map[string]evaluator.Value) (evalu
 		return nil, err
 	}
 
-	key := args[1].String()
-	delete(s, key)
+	delete(s, evaluator.SetKey(args[1]))
 	return args[0], nil
 }
 

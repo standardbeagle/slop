@@ -4,6 +4,7 @@ package evaluator
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/standardbeagle/slop/internal/ast"
@@ -166,25 +167,41 @@ func NewSetValue() *SetValue {
 	}
 }
 
+// SetKey computes a set/dedup key that is type-aware so distinct types with the
+// same textual form (e.g. int 1 vs string "1") do not collide, while numeric
+// values that compare equal (int 1 vs float 1.0) share a key, matching Equal().
+func SetKey(value Value) string {
+	switch v := value.(type) {
+	case *IntValue:
+		return "n:" + strconv.FormatFloat(float64(v.Value), 'g', -1, 64)
+	case *FloatValue:
+		return "n:" + strconv.FormatFloat(v.Value, 'g', -1, 64)
+	default:
+		return value.Type() + ":" + value.String()
+	}
+}
+
 func (s *SetValue) Add(value Value) {
-	s.Elements[value.String()] = value
+	s.Elements[SetKey(value)] = value
 }
 
 func (s *SetValue) Has(value Value) bool {
-	_, ok := s.Elements[value.String()]
+	_, ok := s.Elements[SetKey(value)]
 	return ok
 }
 
 func (s *SetValue) Remove(value Value) {
-	delete(s.Elements, value.String())
+	delete(s.Elements, SetKey(value))
 }
 
 func (s *SetValue) Type() string { return "set" }
 func (s *SetValue) String() string {
+	// Display stored values (not internal keys) in a deterministic order.
 	elements := make([]string, 0, len(s.Elements))
-	for k := range s.Elements {
-		elements = append(elements, k)
+	for _, v := range s.Elements {
+		elements = append(elements, v.String())
 	}
+	sort.Strings(elements)
 	return "{" + strings.Join(elements, ", ") + "}"
 }
 func (s *SetValue) IsTruthy() bool { return len(s.Elements) > 0 }

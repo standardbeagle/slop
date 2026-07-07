@@ -82,3 +82,13 @@ func TestBugNotIn(t *testing.T) {
 		}
 	}
 }
+
+func TestBugSetTypeCollision(t *testing.T) {
+	// string "1" must not be found in a set of the int 1
+	if testEval(t, `"1" in {1}`).(*BoolValue).Value {
+		t.Error(`"1" in {1} should be false`)
+	}
+	if !testEval(t, `1 in {1}`).(*BoolValue).Value {
+		t.Error(`1 in {1} should be true`)
+	}
+}
