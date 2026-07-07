@@ -1276,15 +1276,15 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 			return nil, err
 		}
 
-		// Check global iteration limit
-		if err := e.ctx.IncrementIterations(); err != nil {
-			return nil, err
-		}
-
 		// Get next value
 		val, ok := iter.Next()
 		if !ok {
 			break
+		}
+
+		// Check global iteration limit (only for iterations that run the body)
+		if err := e.ctx.IncrementIterations(); err != nil {
+			return nil, err
 		}
 
 		// Bind loop variables

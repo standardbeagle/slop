@@ -1,6 +1,11 @@
 package evaluator
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/standardbeagle/slop/internal/lexer"
+	"github.com/standardbeagle/slop/internal/parser"
+)
 
 func TestBugListEquality(t *testing.T) {
 	cases := map[string]bool{
@@ -90,5 +95,28 @@ func TestBugSetTypeCollision(t *testing.T) {
 	}
 	if !testEval(t, `1 in {1}`).(*BoolValue).Value {
 		t.Error(`1 in {1} should be true`)
+	}
+}
+
+func TestBugIterationCounterOffByOne(t *testing.T) {
+	src := "total = 0\nfor x in [1, 2, 3]:\n    total = total + x\ntotal\n"
+	l := lexer.New(src)
+	p := parser.New(l)
+	prog := p.ParseProgram()
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parse: %v", p.Errors())
+	}
+	// Exactly 3 iterations should fit within a limit of 3.
+	ctx := NewContextWithLimits(&ExecutionLimits{MaxIterations: 3})
+	e := NewWithContext(ctx)
+	res, err := e.Eval(prog)
+	if err != nil {
+		t.Fatalf("loop of 3 items exceeded MaxIterations=3: %v", err)
+	}
+	if res.String() != "6" {
+		t.Errorf("total = %s, want 6", res.String())
+	}
+	if ctx.Limits.IterationCount != 3 {
+		t.Errorf("IterationCount = %d, want 3", ctx.Limits.IterationCount)
 	}
 }
