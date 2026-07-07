@@ -3,6 +3,7 @@ package evaluator
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -561,16 +562,25 @@ func (e *Evaluator) binaryOp(op string, left, right Value) (Value, error) {
 		}
 	}
 
-	// String repetition
+	// String repetition (either operand order)
 	if op == "*" {
+		var s *StringValue
+		var n *IntValue
 		if ls, ok := left.(*StringValue); ok {
 			if ri, ok := right.(*IntValue); ok {
-				result := ""
-				for i := int64(0); i < ri.Value; i++ {
-					result += ls.Value
-				}
-				return &StringValue{Value: result}, nil
+				s, n = ls, ri
 			}
+		} else if rs, ok := right.(*StringValue); ok {
+			if li, ok := left.(*IntValue); ok {
+				s, n = rs, li
+			}
+		}
+		if s != nil {
+			count := n.Value
+			if count < 0 {
+				count = 0
+			}
+			return &StringValue{Value: strings.Repeat(s.Value, int(count))}, nil
 		}
 	}
 
@@ -611,16 +621,9 @@ func (e *Evaluator) numericOp(op string, left, right Value) (Value, error) {
 			if rf == 0 {
 				return nil, fmt.Errorf("modulo by zero")
 			}
-			// Convert to int for modulo
-			li := int64(lf)
-			ri := int64(rf)
-			return &FloatValue{Value: float64(li % ri)}, nil
+			return &FloatValue{Value: math.Mod(lf, rf)}, nil
 		case "**":
-			result := 1.0
-			for i := 0; i < int(rf); i++ {
-				result *= lf
-			}
-			return &FloatValue{Value: result}, nil
+			return &FloatValue{Value: math.Pow(lf, rf)}, nil
 		}
 	}
 
@@ -646,6 +649,10 @@ func (e *Evaluator) numericOp(op string, left, right Value) (Value, error) {
 		}
 		return &IntValue{Value: li % ri}, nil
 	case "**":
+		if ri < 0 {
+			// Negative exponent yields a fractional result.
+			return &FloatValue{Value: math.Pow(float64(li), float64(ri))}, nil
+		}
 		result := int64(1)
 		for i := int64(0); i < ri; i++ {
 			result *= li
@@ -930,30 +937,7 @@ func (e *Evaluator) evalSliceExpression(node *ast.SliceExpression) (Value, error
 		return nil, fmt.Errorf("cannot slice %s", left.Type())
 	}
 
-	end = length
-
-	if node.Start != nil {
-		startVal, err := e.Eval(node.Start)
-		if err != nil {
-			return nil, err
-		}
-		start, _ = ToInt(startVal)
-		if start < 0 {
-			start = length + start
-		}
-	}
-
-	if node.End != nil {
-		endVal, err := e.Eval(node.End)
-		if err != nil {
-			return nil, err
-		}
-		end, _ = ToInt(endVal)
-		if end < 0 {
-			end = length + end
-		}
-	}
-
+	// Resolve step first: it determines the default bounds and clamp range.
 	if node.Step != nil {
 		stepVal, err := e.Eval(node.Step)
 		if err != nil {
@@ -967,15 +951,53 @@ func (e *Evaluator) evalSliceExpression(node *ast.SliceExpression) (Value, error
 		step = 1
 	}
 
-	// Clamp values
-	if start < 0 {
-		start = 0
+	// Follow CPython slice.indices semantics so negative steps and explicit
+	// bounds compose correctly.
+	var lower, upper int64
+	if step > 0 {
+		lower, upper = 0, length
+	} else {
+		lower, upper = -1, length-1
 	}
-	if end > length {
-		end = length
+
+	if node.Start != nil {
+		startVal, err := e.Eval(node.Start)
+		if err != nil {
+			return nil, err
+		}
+		start, _ = ToInt(startVal)
+		if start < 0 {
+			start += length
+		}
+		if start < lower {
+			start = lower
+		} else if start > upper {
+			start = upper
+		}
+	} else if step > 0 {
+		start = lower
+	} else {
+		start = upper
 	}
-	if start > end {
-		start = end
+
+	if node.End != nil {
+		endVal, err := e.Eval(node.End)
+		if err != nil {
+			return nil, err
+		}
+		end, _ = ToInt(endVal)
+		if end < 0 {
+			end += length
+		}
+		if end < lower {
+			end = lower
+		} else if end > upper {
+			end = upper
+		}
+	} else if step > 0 {
+		end = upper
+	} else {
+		end = lower
 	}
 
 	switch l := left.(type) {
@@ -986,7 +1008,7 @@ func (e *Evaluator) evalSliceExpression(node *ast.SliceExpression) (Value, error
 				elements = append(elements, l.Elements[i])
 			}
 		} else {
-			for i := end - 1; i >= start; i += step {
+			for i := start; i > end; i += step {
 				elements = append(elements, l.Elements[i])
 			}
 		}
@@ -999,7 +1021,7 @@ func (e *Evaluator) evalSliceExpression(node *ast.SliceExpression) (Value, error
 				result += string(l.Value[i])
 			}
 		} else {
-			for i := end - 1; i >= start; i += step {
+			for i := start; i > end; i += step {
 				result += string(l.Value[i])
 			}
 		}
