@@ -174,11 +174,11 @@ func (r *Runtime) Resume(ctx context.Context, checkpoint *Checkpoint, options Re
 	if err != nil {
 		return ExecutionResult{}, err
 	}
-	var snapshot evaluator.MachineSnapshot
-	if err := json.Unmarshal(checkpoint.MachineSnapshot, &snapshot); err != nil {
+	snapshot, err := evaluator.UnmarshalMachineSnapshot(checkpoint.MachineSnapshot)
+	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("decoding machine snapshot: %w", err)
 	}
-	machine, machineCheckpoint, err := evaluator.RestoreMachine(program, &snapshot, map[string]*evaluator.BuiltinValue{}, r.evaluator.Context().Services)
+	machine, machineCheckpoint, err := evaluator.RestoreMachine(program, snapshot, map[string]*evaluator.BuiltinValue{}, r.evaluator.Context().Services)
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("restoring machine snapshot: %w", err)
 	}

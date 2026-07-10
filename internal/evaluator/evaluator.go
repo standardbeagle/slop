@@ -749,13 +749,7 @@ func (e *Evaluator) callServiceMethod(bound *BoundMethodValue, args []Value, kwa
 
 func (e *Evaluator) callServiceMethodContext(ctx context.Context, bound *BoundMethodValue, args []Value, kwargs map[string]Value) (Value, error) {
 	// Call the service
-	var result Value
-	var err error
-	if contextual, ok := bound.Service.(ContextService); ok {
-		result, err = contextual.CallContext(ctx, bound.Method, args, kwargs)
-	} else {
-		result, err = bound.Service.Call(bound.Method, args, kwargs)
-	}
+	result, err := callServiceSafely(ctx, bound.Service, bound.Method, args, kwargs)
 
 	// Log the call to the transaction log
 	var logErr error
@@ -781,6 +775,19 @@ func (e *Evaluator) callServiceMethodContext(ctx context.Context, bound *BoundMe
 	})
 
 	return result, err
+}
+
+func callServiceSafely(ctx context.Context, service Service, method string, args []Value, kwargs map[string]Value) (result Value, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = nil
+			err = fmt.Errorf("service call panicked: %v", recovered)
+		}
+	}()
+	if contextual, ok := service.(ContextService); ok {
+		return contextual.CallContext(ctx, method, args, kwargs)
+	}
+	return service.Call(method, args, kwargs)
 }
 
 func (e *Evaluator) callUserFunction(fn *FunctionValue, args []Value, kwargs map[string]Value) (Value, error) {

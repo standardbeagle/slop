@@ -1,12 +1,39 @@
 package evaluator
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 
 	"github.com/standardbeagle/slop/internal/ast"
 )
+
+func UnmarshalMachineSnapshot(data []byte) (*MachineSnapshot, error) {
+	var snapshot MachineSnapshot
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&snapshot); err != nil {
+		return nil, fmt.Errorf("decode machine snapshot: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("decode machine snapshot: trailing data")
+	}
+	if snapshot.Version != "1" || snapshot.Context == nil || len(snapshot.Frames) == 0 {
+		return nil, fmt.Errorf("invalid machine snapshot header")
+	}
+	for i, frame := range snapshot.Frames {
+		if frame.NodePath == "" || frame.Phase < 0 || frame.Phase > 8 || frame.Index < 0 {
+			return nil, fmt.Errorf("invalid machine snapshot frame %d", i)
+		}
+		if len(frame.KwNames) > 100000 || len(frame.Values) > 100000 || len(frame.Kwargs) > 100000 {
+			return nil, fmt.Errorf("machine snapshot frame %d is too large", i)
+		}
+	}
+	return &snapshot, nil
+}
 
 type MachineSnapshot struct {
 	Version     string                 `json:"version"`
@@ -119,6 +146,9 @@ func RestoreMachine(program *ast.Program, snap *MachineSnapshot, builtins map[st
 			return nil, nil, fmt.Errorf("frames[%d].node_path %q not found", i, fs.NodePath)
 		}
 		f := &machineFrame{node: n, phase: fs.Phase, index: fs.Index, kwNames: append([]string(nil), fs.KwNames...), failed: fs.Failed, breakpointConsumed: fs.BreakpointConsumed}
+		if err := validateRestoredFrame(f, n); err != nil {
+			return nil, nil, fmt.Errorf("frames[%d]: %w", i, err)
+		}
 		if fs.Value != nil {
 			f.value, err = d.DeserializeValue(fs.Value)
 			if err != nil {
@@ -156,6 +186,39 @@ func RestoreMachine(program *ast.Program, snap *MachineSnapshot, builtins map[st
 	}
 	cp := &MachineCheckpoint{machine: m, failure: m.err, paused: m.paused}
 	return m, cp, nil
+}
+
+func validateRestoredFrame(frame *machineFrame, node ast.Node) error {
+	maxPhase := 4
+	maxIndex := 0
+	switch n := node.(type) {
+	case *ast.Program:
+		maxPhase, maxIndex = 1, len(n.Statements)
+	case *ast.Block:
+		maxPhase, maxIndex = 1, len(n.Statements)
+	case *ast.ExpressionStatement, *ast.AssignStatement, *ast.MemberExpression, *ast.PrefixExpression:
+		maxPhase = 1
+	case *ast.InfixExpression, *ast.IndexExpression, *ast.TernaryExpression:
+		maxPhase = 2
+	case *ast.CallExpression:
+		maxPhase, maxIndex = 4, len(n.Arguments)
+		if len(frame.values) != 0 && len(frame.values) != len(n.Arguments) {
+			return fmt.Errorf("call value count does not match arguments")
+		}
+	case *ast.ListLiteral:
+		maxPhase, maxIndex = 1, len(n.Elements)
+	case *ast.SetLiteral:
+		maxPhase, maxIndex = 1, len(n.Elements)
+	case *ast.EmitStatement:
+		maxPhase, maxIndex = 2, len(n.Values)+len(n.Named)
+	}
+	if frame.phase > maxPhase {
+		return fmt.Errorf("phase %d exceeds %d for %T", frame.phase, maxPhase, node)
+	}
+	if maxIndex > 0 && frame.index > maxIndex {
+		return fmt.Errorf("index %d exceeds %d for %T", frame.index, maxIndex, node)
+	}
+	return nil
 }
 
 func machineNodePaths(program *ast.Program) (map[ast.Node]string, map[string]ast.Node) {

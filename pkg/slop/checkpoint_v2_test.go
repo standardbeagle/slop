@@ -384,3 +384,19 @@ func TestGenericErrorCheckpointCanBePatchedAndContinuedFresh(t *testing.T) {
 		t.Fatalf("resumed=%+v", resumed)
 	}
 }
+
+type panicService struct{}
+
+func (*panicService) Call(string, []Value, map[string]Value) (Value, error) { panic("boom") }
+
+func TestServicePanicBecomesResumableFailure(t *testing.T) {
+	runtime := NewRuntime()
+	runtime.RegisterExternalService("api", &panicService{})
+	result, err := runtime.ExecuteResumable(context.Background(), "api.fetch()", ExecuteOptions{})
+	if err == nil || result.Status != ExecutionFailed || result.Checkpoint == nil {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if !strings.Contains(err.Error(), "service call panicked") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
