@@ -744,8 +744,18 @@ func (e *Evaluator) callFunction(fn Value, args []Value, kwargs map[string]Value
 
 // callServiceMethod calls a service method and logs it to the transaction log.
 func (e *Evaluator) callServiceMethod(bound *BoundMethodValue, args []Value, kwargs map[string]Value) (Value, error) {
+	return e.callServiceMethodContext(context.Background(), bound, args, kwargs)
+}
+
+func (e *Evaluator) callServiceMethodContext(ctx context.Context, bound *BoundMethodValue, args []Value, kwargs map[string]Value) (Value, error) {
 	// Call the service
-	result, err := bound.Service.Call(bound.Method, args, kwargs)
+	var result Value
+	var err error
+	if contextual, ok := bound.Service.(ContextService); ok {
+		result, err = contextual.CallContext(ctx, bound.Method, args, kwargs)
+	} else {
+		result, err = bound.Service.Call(bound.Method, args, kwargs)
+	}
 
 	// Log the call to the transaction log
 	var logErr error
@@ -1070,8 +1080,10 @@ type BoundMethodValue struct {
 	Method      string
 }
 
-func (b *BoundMethodValue) Type() string   { return "bound_method" }
-func (b *BoundMethodValue) String() string { return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method) }
+func (b *BoundMethodValue) Type() string { return "bound_method" }
+func (b *BoundMethodValue) String() string {
+	return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method)
+}
 func (b *BoundMethodValue) IsTruthy() bool { return true }
 
 // getMethod is defined in builtins.go

@@ -3,7 +3,11 @@ package slop
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/standardbeagle/slop/internal/ast"
 	"github.com/standardbeagle/slop/internal/builtin"
@@ -15,14 +19,15 @@ import (
 
 // Runtime is the main entry point for executing SLOP scripts.
 type Runtime struct {
-	evaluator        *evaluator.Evaluator
-	registry         *builtin.Registry
-	mcpManager       *runtime.MCPManager
-	llmService       *runtime.LLMService
-	resumable        *evaluator.ResumableEvaluator
-	checkpointDir    string
-	currentScript    string
-	currentProgram   *ast.Program
+	evaluator      *evaluator.Evaluator
+	registry       *builtin.Registry
+	mcpManager     *runtime.MCPManager
+	llmService     *runtime.LLMService
+	resumable      *evaluator.ResumableEvaluator
+	checkpointDir  string
+	currentScript  string
+	currentProgram *ast.Program
+	resumableMu    sync.Mutex
 }
 
 // NewRuntime creates a new SLOP runtime with all built-in functions registered.
@@ -110,6 +115,249 @@ func (r *Runtime) Execute(source string) (evaluator.Value, error) {
 
 	// Execute the program
 	return r.evaluator.Eval(program)
+}
+
+// ExecuteResumable executes source using the explicit-stack evaluator.
+func (r *Runtime) ExecuteResumable(ctx context.Context, source string, options ExecuteOptions) (ExecutionResult, error) {
+	r.resumableMu.Lock()
+	defer r.resumableMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return ExecutionResult{}, err
+	}
+	program, err := r.Parse(source)
+	if err != nil {
+		return ExecutionResult{}, err
+	}
+	machine := evaluator.NewMachine(program, r.evaluator.Context())
+	for _, breakpoint := range options.Breakpoints {
+		if breakpoint.Condition == "" {
+			machine.SetBreakpoint(breakpoint.Line)
+			continue
+		}
+		condition, err := r.parseBreakpointCondition(breakpoint.Condition)
+		if err != nil {
+			return ExecutionResult{}, fmt.Errorf("breakpoint line %d condition: %w", breakpoint.Line, err)
+		}
+		machine.SetConditionalBreakpoint(breakpoint.Line, condition)
+	}
+	result := machine.RunContext(ctx)
+	return r.publicMachineResult(source, program, machine, result, options.Breakpoints)
+}
+
+// SupportsResumable reports whether source uses only nodes supported by the
+// explicit-stack evaluator. It parses and inspects source without executing it.
+func (r *Runtime) SupportsResumable(source string) error {
+	program, err := r.Parse(source)
+	if err != nil {
+		return err
+	}
+	return evaluator.ValidateMachineProgram(program)
+}
+
+// Resume continues a checkpoint produced by ExecuteResumable on this Runtime.
+func (r *Runtime) Resume(ctx context.Context, checkpoint *Checkpoint, options ResumeOptions) (result ExecutionResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = ExecutionResult{}
+			err = fmt.Errorf("invalid resumable checkpoint: %v", recovered)
+		}
+	}()
+	r.resumableMu.Lock()
+	defer r.resumableMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return ExecutionResult{}, err
+	}
+	if err := ValidateResumeOptions(checkpoint, options); err != nil {
+		return ExecutionResult{}, err
+	}
+	program, err := r.Parse(checkpoint.Script)
+	if err != nil {
+		return ExecutionResult{}, err
+	}
+	var snapshot evaluator.MachineSnapshot
+	if err := json.Unmarshal(checkpoint.MachineSnapshot, &snapshot); err != nil {
+		return ExecutionResult{}, fmt.Errorf("decoding machine snapshot: %w", err)
+	}
+	machine, machineCheckpoint, err := evaluator.RestoreMachine(program, &snapshot, map[string]*evaluator.BuiltinValue{}, r.evaluator.Context().Services)
+	if err != nil {
+		return ExecutionResult{}, fmt.Errorf("restoring machine snapshot: %w", err)
+	}
+	for _, breakpoint := range checkpoint.Breakpoints {
+		if breakpoint.Condition != "" {
+			condition, parseErr := r.parseBreakpointCondition(breakpoint.Condition)
+			if parseErr != nil {
+				return ExecutionResult{}, parseErr
+			}
+			machine.SetConditionalBreakpoint(breakpoint.Line, condition)
+		}
+	}
+	internal := evaluator.MachineResumeOptions{}
+	switch options.Mode {
+	case ResumeContinue:
+		internal.Mode = evaluator.MachineContinue
+	case ResumeAcceptResult:
+		value, err := deserializePublicValue(options.ReplacementResult)
+		if err != nil {
+			return ExecutionResult{}, err
+		}
+		internal.Mode, internal.Replacement = evaluator.MachineAcceptResult, value
+	case ResumeRetryCall:
+		if len(checkpoint.Continuation) == 0 || checkpoint.Continuation[len(checkpoint.Continuation)-1].Call == nil {
+			return ExecutionResult{}, &CheckpointValidationError{Path: "$.continuation", Code: "active_call", Message: "retry_call requires the active frame to be a failed service call"}
+		}
+		call := checkpoint.Continuation[len(checkpoint.Continuation)-1].Call
+		args := make([]evaluator.Value, len(call.Args))
+		for i, serialized := range call.Args {
+			value, err := deserializePublicValue(serialized)
+			if err != nil {
+				return ExecutionResult{}, err
+			}
+			args[i] = value
+		}
+		kwargs := make(map[string]evaluator.Value, len(call.Kwargs))
+		for key, serialized := range call.Kwargs {
+			value, err := deserializePublicValue(serialized)
+			if err != nil {
+				return ExecutionResult{}, err
+			}
+			kwargs[key] = value
+		}
+		if err := machineCheckpoint.EditFailedCall(call.Service, call.Method, args, kwargs); err != nil {
+			return ExecutionResult{}, err
+		}
+		internal.Mode = evaluator.MachineRetryCall
+	}
+	return r.publicMachineResult(checkpoint.Script, program, machine, machine.ResumeContext(ctx, machineCheckpoint, internal), checkpoint.Breakpoints)
+}
+
+func (r *Runtime) publicMachineResult(source string, program *ast.Program, machine *evaluator.Machine, result evaluator.MachineResult, breakpoints []Breakpoint) (ExecutionResult, error) {
+	if result.Status == evaluator.MachineCompleted {
+		return ExecutionResult{Status: ExecutionCompleted, Result: result.Value, Emitted: machine.Emitted()}, nil
+	}
+	cp, err := makePublicMachineCheckpoint(source, program, machine, result.Checkpoint, breakpoints)
+	if err != nil {
+		if result.Err != nil {
+			return ExecutionResult{Status: ExecutionFailed, Failure: executionFailure(result.Err), Emitted: machine.Emitted()}, fmt.Errorf("%w (checkpoint creation failed: %v)", result.Err, err)
+		}
+		return ExecutionResult{}, err
+	}
+	if result.Status == evaluator.MachinePaused {
+		return ExecutionResult{Status: ExecutionPaused, Checkpoint: cp, Reason: cp.Reason, Emitted: machine.Emitted()}, nil
+	}
+	return ExecutionResult{Status: ExecutionFailed, Checkpoint: cp, Reason: PauseError, Failure: cp.Failure, Emitted: machine.Emitted()}, result.Err
+}
+
+func makePublicMachineCheckpoint(source string, program *ast.Program, machine *evaluator.Machine, internal *evaluator.MachineCheckpoint, breakpoints []Breakpoint) (*Checkpoint, error) {
+	reason := PauseReason(internal.PauseReason())
+	var failure *ExecutionFailure
+	var call *PendingServiceCall
+	if !internal.IsPause() {
+		reason, failure = PauseError, executionFailure(internal.Failure())
+		state, ok := internal.FailedCall()
+		if ok {
+			args := make([]*SerializedValue, len(state.Args))
+			for i, value := range state.Args {
+				var err error
+				args[i], err = serializePublicValue(value)
+				if err != nil {
+					return nil, err
+				}
+			}
+			kwargs := make(map[string]*SerializedValue, len(state.Kwargs))
+			for key, value := range state.Kwargs {
+				serialized, err := serializePublicValue(value)
+				if err != nil {
+					return nil, err
+				}
+				kwargs[key] = serialized
+			}
+			call = &PendingServiceCall{Service: state.Service, Method: state.Method, Args: args, Kwargs: kwargs, Failure: failure, MayHaveSideEffects: true}
+		}
+	}
+	hash := sha256.Sum256([]byte(source))
+	position := internal.Position()
+	if position.Line < 1 {
+		position = ast.Position{Line: 1, Column: 1}
+	}
+	if position.Column < 1 {
+		position.Column = 1
+	}
+	if failure != nil {
+		failure.Position = Position{Line: position.Line, Column: position.Column}
+	}
+	kind := "program"
+	if call != nil {
+		kind = "service_call"
+	}
+	snapshot, err := machine.Snapshot(program)
+	if err != nil {
+		return nil, fmt.Errorf("snapshotting machine: %w", err)
+	}
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("encoding machine snapshot: %w", err)
+	}
+	return &Checkpoint{Version: CheckpointVersion, Script: source, ScriptHash: fmt.Sprintf("%x", hash), Program: SerializedProgram{RootID: "program", Nodes: []SerializedNode{{ID: "program", Kind: "program", Position: Position{Line: position.Line, Column: position.Column}, Fields: json.RawMessage(`{}`)}}}, Position: Position{Line: position.Line, Column: position.Column}, State: ExecutionState{Scopes: []SerializedScope{{ID: "global", Variables: map[string]*SerializedValue{}, IsGlobal: true}}, CurrentScopeID: "global", Limits: json.RawMessage(`{}`), Emitted: []*SerializedValue{}, ControlFlow: json.RawMessage(`{}`)}, Continuation: []ContinuationFrame{{Kind: kind, NodeID: "program", Phase: map[bool]string{true: "failed", false: "paused"}[call != nil], ScopeID: "global", State: json.RawMessage(`{}`), Call: call}}, Breakpoints: append([]Breakpoint(nil), breakpoints...), Reason: reason, Failure: failure, MachineSnapshot: snapshotJSON}, nil
+}
+
+func (r *Runtime) parseBreakpointCondition(source string) (ast.Expression, error) {
+	program, err := r.Parse(source)
+	if err != nil {
+		return nil, err
+	}
+	if len(program.Statements) != 1 {
+		return nil, fmt.Errorf("condition must contain one expression")
+	}
+	statement, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		return nil, fmt.Errorf("condition must be an expression")
+	}
+	return statement.Expression, nil
+}
+
+func executionFailure(err error) *ExecutionFailure {
+	message := "execution failed"
+	if err != nil {
+		message = err.Error()
+	}
+	kind := "evaluation"
+	if strings.Contains(message, "breakpoint condition") {
+		kind = "breakpoint_condition"
+	} else if strings.Contains(message, "service") || strings.Contains(message, "down") {
+		kind = "service_call"
+	}
+	return &ExecutionFailure{Code: "evaluation_error", Message: message, Source: FailureSource{Kind: kind, NodeID: "program"}, Position: Position{Line: 1, Column: 1}}
+}
+
+func serializePublicValue(value evaluator.Value) (*SerializedValue, error) {
+	internal, err := evaluator.NewSerializer(nil).SerializeValue(value)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(internal)
+	if err != nil {
+		return nil, err
+	}
+	var public SerializedValue
+	if err := json.Unmarshal(data, &public); err != nil {
+		return nil, err
+	}
+	return &public, nil
+}
+
+func deserializePublicValue(value *SerializedValue) (evaluator.Value, error) {
+	if err := validateValue(value, "$.replacement_result"); err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var internal evaluator.SerializedValue
+	if err := json.Unmarshal(data, &internal); err != nil {
+		return nil, err
+	}
+	return evaluator.NewDeserializer(nil, nil, nil).DeserializeValue(&internal)
 }
 
 // Parse parses SLOP source code into an AST.

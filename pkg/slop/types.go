@@ -6,6 +6,7 @@
 package slop
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/standardbeagle/slop/internal/evaluator"
@@ -118,6 +119,13 @@ type serviceAdapter struct {
 }
 
 func (s *serviceAdapter) Call(method string, args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
+	return s.external.Call(method, args, kwargs)
+}
+
+func (s *serviceAdapter) CallContext(ctx context.Context, method string, args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
+	if contextual, ok := s.external.(ContextService); ok {
+		return contextual.CallContext(ctx, method, args, kwargs)
+	}
 	return s.external.Call(method, args, kwargs)
 }
 

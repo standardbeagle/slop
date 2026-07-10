@@ -2,6 +2,7 @@
 package evaluator
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -19,16 +20,16 @@ type Value interface {
 // NoneValue represents the absence of a value.
 type NoneValue struct{}
 
-func (n *NoneValue) Type() string    { return "none" }
-func (n *NoneValue) String() string  { return "none" }
-func (n *NoneValue) IsTruthy() bool  { return false }
+func (n *NoneValue) Type() string   { return "none" }
+func (n *NoneValue) String() string { return "none" }
+func (n *NoneValue) IsTruthy() bool { return false }
 
 // BoolValue represents a boolean.
 type BoolValue struct {
 	Value bool
 }
 
-func (b *BoolValue) Type() string   { return "bool" }
+func (b *BoolValue) Type() string { return "bool" }
 func (b *BoolValue) String() string {
 	if b.Value {
 		return "true"
@@ -42,9 +43,9 @@ type IntValue struct {
 	Value int64
 }
 
-func (i *IntValue) Type() string    { return "int" }
-func (i *IntValue) String() string  { return fmt.Sprintf("%d", i.Value) }
-func (i *IntValue) IsTruthy() bool  { return i.Value != 0 }
+func (i *IntValue) Type() string   { return "int" }
+func (i *IntValue) String() string { return fmt.Sprintf("%d", i.Value) }
+func (i *IntValue) IsTruthy() bool { return i.Value != 0 }
 
 // FloatValue represents a floating-point number.
 type FloatValue struct {
@@ -209,6 +210,11 @@ func (s *ServiceValue) IsTruthy() bool { return true }
 // Service is the interface for MCP services.
 type Service interface {
 	Call(method string, args []Value, kwargs map[string]Value) (Value, error)
+}
+
+// ContextService is optionally implemented by cancellable services.
+type ContextService interface {
+	CallContext(context.Context, string, []Value, map[string]Value) (Value, error)
 }
 
 // SlopError represents a runtime error value.
