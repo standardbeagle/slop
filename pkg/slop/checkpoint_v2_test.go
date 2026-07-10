@@ -400,3 +400,33 @@ func TestServicePanicBecomesResumableFailure(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestResumeRejectsMalformedCallFrameBeforeExecution(t *testing.T) {
+	service := &resumableTestService{err: errors.New("down")}
+	runtime := NewRuntime()
+	runtime.RegisterExternalService("api", service)
+	result, _ := runtime.ExecuteResumable(context.Background(), "api.fetch()", ExecuteOptions{})
+	var snapshot map[string]any
+	if err := json.Unmarshal(result.Checkpoint.MachineSnapshot, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	frames := snapshot["frames"].([]any)
+	top := frames[len(frames)-1].(map[string]any)
+	top["phase"], top["index"], top["kw_names"] = float64(3), float64(1), []any{}
+	data, _ := json.Marshal(snapshot)
+	result.Checkpoint.MachineSnapshot = data
+	encoded, err := MarshalCheckpoint(result.Checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err := UnmarshalCheckpoint(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := NewRuntime()
+	fresh.RegisterExternalService("api", service)
+	_, err = fresh.Resume(context.Background(), cp, ResumeOptions{Mode: ResumeRetryCall})
+	if err == nil || !strings.Contains(err.Error(), "index") {
+		t.Fatalf("expected frame index validation error, got %v", err)
+	}
+}

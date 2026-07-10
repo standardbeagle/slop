@@ -146,9 +146,6 @@ func RestoreMachine(program *ast.Program, snap *MachineSnapshot, builtins map[st
 			return nil, nil, fmt.Errorf("frames[%d].node_path %q not found", i, fs.NodePath)
 		}
 		f := &machineFrame{node: n, phase: fs.Phase, index: fs.Index, kwNames: append([]string(nil), fs.KwNames...), failed: fs.Failed, breakpointConsumed: fs.BreakpointConsumed}
-		if err := validateRestoredFrame(f, n); err != nil {
-			return nil, nil, fmt.Errorf("frames[%d]: %w", i, err)
-		}
 		if fs.Value != nil {
 			f.value, err = d.DeserializeValue(fs.Value)
 			if err != nil {
@@ -179,6 +176,9 @@ func RestoreMachine(program *ast.Program, snap *MachineSnapshot, builtins map[st
 			}
 			f.service = &BoundMethodValue{ServiceName: fs.Service, Service: svc, Method: fs.Method}
 		}
+		if err := validateRestoredFrame(f, n); err != nil {
+			return nil, nil, fmt.Errorf("frames[%d]: %w", i, err)
+		}
 		m.stack = append(m.stack, f)
 	}
 	if snap.Failure != "" {
@@ -201,21 +201,30 @@ func validateRestoredFrame(frame *machineFrame, node ast.Node) error {
 	case *ast.InfixExpression, *ast.IndexExpression, *ast.TernaryExpression:
 		maxPhase = 2
 	case *ast.CallExpression:
-		maxPhase, maxIndex = 4, len(n.Arguments)
-		if len(frame.values) != 0 && len(frame.values) != len(n.Arguments) {
+		maxPhase = 4
+		if frame.phase == 3 {
+			maxIndex = len(frame.kwNames)
+		} else {
+			maxIndex = len(n.Arguments)
+		}
+		if frame.phase >= 2 && len(frame.values) != len(n.Arguments) {
 			return fmt.Errorf("call value count does not match arguments")
 		}
 	case *ast.ListLiteral:
 		maxPhase, maxIndex = 1, len(n.Elements)
 	case *ast.SetLiteral:
 		maxPhase, maxIndex = 1, len(n.Elements)
+	case *ast.MapLiteral:
+		maxPhase, maxIndex = 2, len(n.Order)
+	case *ast.RangeExpression:
+		maxPhase, maxIndex = 3, 0
 	case *ast.EmitStatement:
 		maxPhase, maxIndex = 2, len(n.Values)+len(n.Named)
 	}
 	if frame.phase > maxPhase {
 		return fmt.Errorf("phase %d exceeds %d for %T", frame.phase, maxPhase, node)
 	}
-	if maxIndex > 0 && frame.index > maxIndex {
+	if frame.index > maxIndex {
 		return fmt.Errorf("index %d exceeds %d for %T", frame.index, maxIndex, node)
 	}
 	return nil
