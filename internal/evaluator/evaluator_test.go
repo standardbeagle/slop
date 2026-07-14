@@ -296,6 +296,20 @@ sum`, 10},
 	}
 }
 
+func TestEvalForParallelFailsLoudly(t *testing.T) {
+	input := `for i in range(3) with parallel(2):
+    i`
+
+	l := lexer.New(input)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	require.Empty(t, p.Errors())
+
+	e := New()
+	_, err := e.Eval(program)
+	require.EqualError(t, err, "parallel loop execution is not supported")
+}
+
 func TestEvalForBreakContinue(t *testing.T) {
 	// Test break
 	input := `sum = 0
