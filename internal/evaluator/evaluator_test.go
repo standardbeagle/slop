@@ -244,6 +244,34 @@ func TestEvalAssignment(t *testing.T) {
 	}
 }
 
+func TestEvalAssignmentLexicalScope(t *testing.T) {
+	t.Run("plain assignment shadows outer binding", func(t *testing.T) {
+		result := testEval(t, `x = 1
+def shadow():
+    x = 2
+    return x
+[shadow(), x]`)
+
+		list, ok := result.(*ListValue)
+		require.True(t, ok)
+		require.Len(t, list.Elements, 2)
+		assert.Equal(t, int64(2), list.Elements[0].(*IntValue).Value)
+		assert.Equal(t, int64(1), list.Elements[1].(*IntValue).Value)
+	})
+
+	t.Run("compound assignment updates outer binding", func(t *testing.T) {
+		result := testEval(t, `x = 1
+def increment():
+    x += 1
+increment()
+x`)
+
+		value, ok := result.(*IntValue)
+		require.True(t, ok)
+		assert.Equal(t, int64(2), value.Value)
+	})
+}
+
 func TestEvalIfStatement(t *testing.T) {
 	tests := []struct {
 		input    string
