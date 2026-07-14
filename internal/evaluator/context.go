@@ -92,7 +92,8 @@ func (s *Scope) Has(name string) bool {
 // services, limits, txlog) lives in Context.
 type evalFrame struct {
 	// Active variable scope for this call frame.
-	Scope *Scope
+	Scope     *Scope
+	baseScope *Scope
 
 	// Control-flow signals — private to this frame.
 	returnValue    Value
@@ -109,14 +110,14 @@ type evalFrame struct {
 
 // newEvalFrame creates a root evalFrame with the given scope.
 func newEvalFrame(scope *Scope) *evalFrame {
-	return &evalFrame{Scope: scope}
+	return &evalFrame{Scope: scope, baseScope: scope}
 }
 
 // childEvalFrame creates a fresh evalFrame for a function call. It shares no
 // control-flow state with the parent — each call sees a clean slate. The new
 // scope is set by the caller after creation.
 func childEvalFrame(scope *Scope) *evalFrame {
-	return &evalFrame{Scope: scope}
+	return &evalFrame{Scope: scope, baseScope: scope}
 }
 
 // Context holds the execution context for the evaluator.
@@ -397,6 +398,24 @@ func (f *evalFrame) ShouldInterrupt() bool {
 // PushScope creates a new child scope and makes it current in this frame.
 func (f *evalFrame) PushScope() {
 	f.Scope = NewEnclosedScope(f.Scope)
+}
+
+// SetLocal updates an existing binding in this call frame or creates one in
+// the active scope, without crossing into a closure or global parent scope.
+func (f *evalFrame) SetLocal(name string, val Value) {
+	for scope := f.Scope; scope != nil; scope = scope.parent {
+		scope.mu.RLock()
+		_, ok := scope.store[name]
+		scope.mu.RUnlock()
+		if ok {
+			scope.Set(name, val)
+			return
+		}
+		if scope == f.baseScope {
+			break
+		}
+	}
+	f.Scope.Set(name, val)
 }
 
 // PopScope returns to the parent scope in this frame.

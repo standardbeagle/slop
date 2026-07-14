@@ -423,7 +423,7 @@ func (e *Evaluator) evalAssignment(node *ast.AssignStatement) (Value, error) {
 
 	// Assign to targets
 	for _, target := range node.Targets {
-		if err := e.assignToTarget(target, val); err != nil {
+		if err := e.assignToTarget(target, val, node.Operator != "="); err != nil {
 			return nil, err
 		}
 	}
@@ -431,10 +431,14 @@ func (e *Evaluator) evalAssignment(node *ast.AssignStatement) (Value, error) {
 	return val, nil
 }
 
-func (e *Evaluator) assignToTarget(target ast.Expression, val Value) error {
+func (e *Evaluator) assignToTarget(target ast.Expression, val Value, update bool) error {
 	switch t := target.(type) {
 	case *ast.Identifier:
-		e.frame.Scope.Update(t.Value, val)
+		if update {
+			e.frame.Scope.Update(t.Value, val)
+		} else {
+			e.frame.SetLocal(t.Value, val)
+		}
 		return nil
 
 	case *ast.IndexExpression:
