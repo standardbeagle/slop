@@ -1392,8 +1392,7 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 				loopOpts.Timeout = time.Duration(v.Value * float64(time.Second))
 			}
 		case "parallel":
-			// Parallel execution is not yet supported, but we accept the modifier
-			// TODO: Implement parallel execution
+			return nil, fmt.Errorf("parallel loop execution is not supported")
 		}
 	}
 
