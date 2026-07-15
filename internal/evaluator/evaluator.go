@@ -1247,8 +1247,10 @@ type BoundMethodValue struct {
 	Method      string
 }
 
-func (b *BoundMethodValue) Type() string   { return "bound_method" }
-func (b *BoundMethodValue) String() string { return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method) }
+func (b *BoundMethodValue) Type() string { return "bound_method" }
+func (b *BoundMethodValue) String() string {
+	return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method)
+}
 func (b *BoundMethodValue) IsTruthy() bool { return true }
 
 // getMethod is defined in builtins.go
@@ -1426,7 +1428,14 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 			return nil, err
 		}
 
-		// Check global iteration limit
+		// Get next value
+		val, ok := iter.Next()
+		if !ok {
+			break
+		}
+
+		// Account only for values actually processed, so an exhausted iterator
+		// does not consume one extra global iteration.
 		if err := e.ctx.IncrementIterations(); err != nil {
 			return nil, err
 		}
@@ -1434,12 +1443,6 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 		// Check wall-clock limit so compute-bound loops also honor MaxDuration.
 		if err := e.ctx.CheckDuration(); err != nil {
 			return nil, err
-		}
-
-		// Get next value
-		val, ok := iter.Next()
-		if !ok {
-			break
 		}
 
 		// Give closures a stable binding for this iteration rather than
@@ -1800,6 +1803,9 @@ func (e *Evaluator) evalListComprehension(node *ast.ListComprehension) (Value, e
 		if !ok {
 			break
 		}
+		if err := e.ctx.IncrementIterations(); err != nil {
+			return nil, err
+		}
 
 		if node.Index != nil {
 			e.frame.Scope.Set(node.Index.Value, &IntValue{Value: index})
@@ -1850,6 +1856,9 @@ func (e *Evaluator) evalMapComprehension(node *ast.MapComprehension) (Value, err
 		val, ok := iter.Next()
 		if !ok {
 			break
+		}
+		if err := e.ctx.IncrementIterations(); err != nil {
+			return nil, err
 		}
 
 		// For map comprehension, we expect pairs

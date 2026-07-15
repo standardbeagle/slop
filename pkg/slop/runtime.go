@@ -15,14 +15,14 @@ import (
 
 // Runtime is the main entry point for executing SLOP scripts.
 type Runtime struct {
-	evaluator        *evaluator.Evaluator
-	registry         *builtin.Registry
-	mcpManager       *runtime.MCPManager
-	llmService       *runtime.LLMService
-	resumable        *evaluator.ResumableEvaluator
-	checkpointDir    string
-	currentScript    string
-	currentProgram   *ast.Program
+	evaluator      *evaluator.Evaluator
+	registry       *builtin.Registry
+	mcpManager     *runtime.MCPManager
+	llmService     *runtime.LLMService
+	resumable      *evaluator.ResumableEvaluator
+	checkpointDir  string
+	currentScript  string
+	currentProgram *ast.Program
 }
 
 // NewRuntime creates a new SLOP runtime with all built-in functions registered.
@@ -338,5 +338,8 @@ type pipelineCaller struct {
 // to the evaluator's InvokeFunction so all calls go through the proper
 // per-frame scope isolation machinery.
 func (p *pipelineCaller) CallFunction(fn evaluator.Value, args []evaluator.Value) (evaluator.Value, error) {
+	if err := p.eval.Context().IncrementIterations(); err != nil {
+		return nil, err
+	}
 	return p.eval.InvokeFunction(fn, args)
 }
