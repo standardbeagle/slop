@@ -678,6 +678,17 @@ count
 		require.EqualError(t, err, "iteration limit exceeded (2)")
 		assert.Equal(t, int64(3), rt.Context().Limits.IterationCount)
 	})
+
+	t.Run("pipeline accounting stays with the executing runtime", func(t *testing.T) {
+		limited := NewRuntimeWithConfig(Config{MaxIterations: 2})
+		other := NewRuntimeWithConfig(Config{MaxIterations: 10})
+
+		_, err := limited.Execute(`[1, 2, 3] | map(x -> x * 2)`)
+
+		require.EqualError(t, err, "iteration limit exceeded (2)")
+		assert.Equal(t, int64(3), limited.Context().Limits.IterationCount)
+		assert.Zero(t, other.Context().Limits.IterationCount)
+	})
 }
 
 // countingService implements evaluator.Service and counts calls. When llm is
