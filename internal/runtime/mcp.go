@@ -220,6 +220,10 @@ func dialMCPAddresses(ctx context.Context, network, port string, addrs []netip.A
 		go func() {
 			defer workers.Done()
 			for addr := range jobs {
+				if err := dialCtx.Err(); err != nil {
+					results <- mcpDialResult{err: err}
+					continue
+				}
 				conn, err := dial(dialCtx, network, net.JoinHostPort(addr.String(), port))
 				results <- mcpDialResult{conn: conn, err: err}
 			}
@@ -258,6 +262,10 @@ func dialMCPAddresses(ctx context.Context, network, port string, addrs []netip.A
 	ready := true
 	var dialErrors []error
 	for next < len(addrs) || active > 0 {
+		if err := ctx.Err(); err != nil {
+			cleanup()
+			return nil, err
+		}
 		var job chan netip.Addr
 		var addr netip.Addr
 		if ready && next < len(addrs) && active < workerCount {
@@ -283,6 +291,13 @@ func dialMCPAddresses(ctx context.Context, network, port string, addrs []netip.A
 			ready = true
 		case result := <-results:
 			active--
+			if err := ctx.Err(); err != nil {
+				if result.conn != nil {
+					result.conn.Close()
+				}
+				cleanup()
+				return nil, err
+			}
 			if result.err == nil {
 				cleanup()
 				return result.conn, nil

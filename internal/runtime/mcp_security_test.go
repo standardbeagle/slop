@@ -307,11 +307,20 @@ func TestMCPDialCancellationJoinsAttemptWorkers(t *testing.T) {
 
 	started := make(chan struct{}, mcpDialAttemptBudget)
 	exited := make(chan struct{}, mcpDialAttemptBudget)
+	postCancel := make(chan struct{}, 1)
+	release := make(chan struct{})
 	dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
+		if ctx.Err() != nil {
+			select {
+			case postCancel <- struct{}{}:
+			default:
+			}
+			return nil, ctx.Err()
+		}
 		started <- struct{}{}
-		<-ctx.Done()
+		<-release
 		exited <- struct{}{}
-		return nil, ctx.Err()
+		return nil, context.Canceled
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -323,11 +332,17 @@ func TestMCPDialCancellationJoinsAttemptWorkers(t *testing.T) {
 		<-started
 	}
 	cancel()
+	close(release)
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("dial error = %v, want context.Canceled", err)
 	}
 	for range mcpDialAttemptBudget {
 		<-exited
+	}
+	select {
+	case <-postCancel:
+		t.Fatal("replacement dial started after cancellation")
+	default:
 	}
 }
 
