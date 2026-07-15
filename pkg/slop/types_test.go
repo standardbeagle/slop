@@ -1,9 +1,10 @@
-package slop
+package slop_test
 
 import (
 	"fmt"
 	"testing"
 
+	. "github.com/standardbeagle/slop/pkg/slop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -92,6 +93,28 @@ func TestRegisterExternalService(t *testing.T) {
 	services := rt.Services()
 	_, ok := services["test"]
 	assert.True(t, ok, "service should be registered")
+}
+
+func TestRuntimePublicAPIIsUsableExternally(t *testing.T) {
+	base := NewRuntime()
+	defer base.Close()
+
+	var ctx *Context = base.Context()
+	rt := NewRuntimeWithContext(ctx)
+	defer rt.Close()
+
+	program, err := rt.Parse("1 + 2")
+	require.NoError(t, err)
+	var node Node = program
+
+	result, err := rt.Eval(node)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), result.(*IntValue).Value)
+
+	service := &ExternalTestService{}
+	rt.RegisterService("external", service)
+	var services map[string]Service = rt.Services()
+	assert.Same(t, service, services["external"])
 }
 
 func TestExternalService_Echo(t *testing.T) {

@@ -52,7 +52,7 @@ func NewRuntime() *Runtime {
 }
 
 // NewRuntimeWithContext creates a runtime with a custom context.
-func NewRuntimeWithContext(ctx *evaluator.Context) *Runtime {
+func NewRuntimeWithContext(ctx *Context) *Runtime {
 	eval := evaluator.NewWithContext(ctx)
 	registry := builtin.NewRegistry()
 	mcpMgr := runtime.NewMCPManager()
@@ -103,7 +103,7 @@ func NewRuntimeWithConfig(cfg Config) *Runtime {
 }
 
 // Execute parses and runs a SLOP script, returning the result.
-func (r *Runtime) Execute(source string) (evaluator.Value, error) {
+func (r *Runtime) Execute(source string) (Value, error) {
 	// Parse the source
 	program, err := r.Parse(source)
 	if err != nil {
@@ -115,7 +115,7 @@ func (r *Runtime) Execute(source string) (evaluator.Value, error) {
 }
 
 // Parse parses SLOP source code into an AST.
-func (r *Runtime) Parse(source string) (*ast.Program, error) {
+func (r *Runtime) Parse(source string) (*Program, error) {
 	l := lexer.New(source)
 	p := parser.New(l)
 	program := p.ParseProgram()
@@ -126,32 +126,32 @@ func (r *Runtime) Parse(source string) (*ast.Program, error) {
 }
 
 // Eval evaluates an AST node.
-func (r *Runtime) Eval(node ast.Node) (evaluator.Value, error) {
+func (r *Runtime) Eval(node Node) (Value, error) {
 	return r.evaluator.Eval(node)
 }
 
 // Context returns the runtime's execution context.
-func (r *Runtime) Context() *evaluator.Context {
+func (r *Runtime) Context() *Context {
 	return r.evaluator.Context()
 }
 
 // Emitted returns all values emitted during execution.
-func (r *Runtime) Emitted() []evaluator.Value {
+func (r *Runtime) Emitted() []Value {
 	return r.evaluator.Context().Emitted
 }
 
 // RegisterService registers an MCP service with the runtime.
-func (r *Runtime) RegisterService(name string, service evaluator.Service) {
+func (r *Runtime) RegisterService(name string, service Service) {
 	r.evaluator.Context().RegisterService(name, service)
 }
 
 // RegisterBuiltin registers a custom built-in function.
-func (r *Runtime) RegisterBuiltin(name string, fn evaluator.BuiltinFunction) {
+func (r *Runtime) RegisterBuiltin(name string, fn BuiltinFunction) {
 	r.evaluator.Context().RegisterBuiltin(name, fn)
 }
 
 // Services returns all registered services.
-func (r *Runtime) Services() map[string]evaluator.Service {
+func (r *Runtime) Services() map[string]Service {
 	return r.evaluator.Context().Services
 }
 
@@ -204,7 +204,7 @@ func (r *Runtime) SetCheckpointDir(dir string) {
 // ExecuteWithCheckpoints parses and runs a SLOP script with checkpoint support.
 // If a pause statement is encountered, it saves a checkpoint and returns.
 // Returns: result value, checkpoint path (empty if completed), error
-func (r *Runtime) ExecuteWithCheckpoints(source string) (evaluator.Value, string, error) {
+func (r *Runtime) ExecuteWithCheckpoints(source string) (Value, string, error) {
 	if r.checkpointDir == "" {
 		// No checkpoint dir - fall back to regular execution
 		result, err := r.Execute(source)
@@ -233,7 +233,7 @@ func (r *Runtime) ExecuteWithCheckpoints(source string) (evaluator.Value, string
 
 // ResumeFromCheckpoint resumes execution from a checkpoint file.
 // Returns: result value, new checkpoint path (empty if completed), error
-func (r *Runtime) ResumeFromCheckpoint(checkpointPath string) (evaluator.Value, string, error) {
+func (r *Runtime) ResumeFromCheckpoint(checkpointPath string) (Value, string, error) {
 	if r.checkpointDir == "" {
 		return nil, "", fmt.Errorf("checkpoint directory not configured")
 	}
@@ -253,7 +253,7 @@ func (r *Runtime) ResumeFromCheckpoint(checkpointPath string) (evaluator.Value, 
 }
 
 // ListCheckpoints returns all checkpoints in the checkpoint directory.
-func (r *Runtime) ListCheckpoints() ([]evaluator.CheckpointInfo, error) {
+func (r *Runtime) ListCheckpoints() ([]CheckpointInfo, error) {
 	if r.checkpointDir == "" {
 		return nil, fmt.Errorf("checkpoint directory not configured")
 	}
@@ -283,7 +283,7 @@ func (r *Runtime) GetPauseMessage() string {
 
 // SetCurrentProgram sets the current program and script for checkpoint validation.
 // This is used when resuming from a checkpoint.
-func (r *Runtime) SetCurrentProgram(program *ast.Program, script string) {
+func (r *Runtime) SetCurrentProgram(program *Program, script string) {
 	r.currentProgram = program
 	r.currentScript = script
 	if r.resumable != nil {

@@ -8,6 +8,7 @@ package slop
 import (
 	"fmt"
 
+	"github.com/standardbeagle/slop/internal/ast"
 	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
@@ -34,17 +35,26 @@ import (
 //	        return nil, fmt.Errorf("unknown method: %s", method)
 //	    }
 //	}
-type Service interface {
-	// Call invokes a method on the service.
-	// method is the method name being called.
-	// args are positional arguments (in order).
-	// kwargs are keyword arguments (by name).
-	Call(method string, args []Value, kwargs map[string]Value) (Value, error)
-}
+type Service = evaluator.Service
 
 // Value represents a runtime value in SLOP.
 // All SLOP values implement this interface.
 type Value = evaluator.Value
+
+// Node represents a node that can be evaluated by a Runtime.
+type Node = ast.Node
+
+// Program represents a parsed SLOP program.
+type Program = ast.Program
+
+// Context contains the state used while evaluating SLOP programs.
+type Context = evaluator.Context
+
+// BuiltinFunction implements a built-in SLOP function.
+type BuiltinFunction = evaluator.BuiltinFunction
+
+// CheckpointInfo describes a saved runtime checkpoint.
+type CheckpointInfo = evaluator.CheckpointInfo
 
 // StringValue represents a string value.
 type StringValue = evaluator.StringValue
@@ -111,25 +121,6 @@ func NewErrorValue(message string) *ErrorValue {
 	return &evaluator.SlopError{Message: message}
 }
 
-// ServiceAdapter wraps an external Service implementation for use with the runtime.
-// This is used internally to bridge external services to the evaluator.
-type serviceAdapter struct {
-	external Service
-}
-
-func (s *serviceAdapter) Call(method string, args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
-	return s.external.Call(method, args, kwargs)
-}
-
-// wrapService wraps an external Service for internal use.
-func wrapService(svc Service) evaluator.Service {
-	// Check if it's already an internal service (e.g., from MCP)
-	if internal, ok := svc.(evaluator.Service); ok {
-		return internal
-	}
-	return &serviceAdapter{external: svc}
-}
-
 // RegisterExternalService registers an external service implementation with the runtime.
 // This allows custom services to be called from SLOP scripts.
 //
@@ -141,7 +132,7 @@ func wrapService(svc Service) evaluator.Service {
 //	// Now in SLOP scripts:
 //	// result = myservice.method(arg1, key: value)
 func (r *Runtime) RegisterExternalService(name string, service Service) {
-	r.evaluator.Context().RegisterService(name, wrapService(service))
+	r.evaluator.Context().RegisterService(name, service)
 }
 
 // ValueToGo converts a SLOP Value to a native Go type.
