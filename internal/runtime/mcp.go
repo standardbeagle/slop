@@ -94,6 +94,10 @@ var awsIPv6MetadataAddr = netip.MustParseAddr("fd00:ec2::254")
 
 const mcpDialFallbackDelay = 250 * time.Millisecond
 
+// mcpDialAttemptBudget bounds the workers, live dial calls, timers, and sockets
+// owned by one multi-address dial, regardless of the DNS answer count.
+const mcpDialAttemptBudget = 4
+
 // NewMCPService creates a new MCP service from the given config.
 func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, error) {
 	client := mcp.NewClient(&mcp.Implementation{
@@ -207,54 +211,95 @@ type mcpDialResult struct {
 
 func dialMCPAddresses(ctx context.Context, network, port string, addrs []netip.Addr, dial mcpDialFunc, fallbackDelay time.Duration) (net.Conn, error) {
 	dialCtx, cancel := context.WithCancel(ctx)
-	results := make(chan mcpDialResult, len(addrs))
-	for i, addr := range addrs {
-		delay := time.Duration(i) * fallbackDelay
+	workerCount := min(len(addrs), mcpDialAttemptBudget)
+	jobs := make(chan netip.Addr)
+	results := make(chan mcpDialResult, workerCount)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
 		go func() {
-			if delay > 0 {
-				timer := time.NewTimer(delay)
-				defer timer.Stop()
-				select {
-				case <-timer.C:
-				case <-dialCtx.Done():
-					results <- mcpDialResult{err: dialCtx.Err()}
-					return
-				}
+			defer workers.Done()
+			for addr := range jobs {
+				conn, err := dial(dialCtx, network, net.JoinHostPort(addr.String(), port))
+				results <- mcpDialResult{conn: conn, err: err}
 			}
-			conn, err := dial(dialCtx, network, net.JoinHostPort(addr.String(), port))
-			results <- mcpDialResult{conn: conn, err: err}
 		}()
 	}
 
+	var timer *time.Timer
+	var timerC <-chan time.Time
+	stopTimer := func() {
+		if timer != nil && !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timerC = nil
+	}
+	cleanup := func() {
+		cancel()
+		stopTimer()
+		close(jobs)
+		workers.Wait()
+		for {
+			select {
+			case result := <-results:
+				if result.conn != nil {
+					result.conn.Close()
+				}
+			default:
+				return
+			}
+		}
+	}
+
+	next, active := 0, 0
+	ready := true
 	var dialErrors []error
-	for received := 0; received < len(addrs); received++ {
+	for next < len(addrs) || active > 0 {
+		var job chan netip.Addr
+		var addr netip.Addr
+		if ready && next < len(addrs) && active < workerCount {
+			job, addr = jobs, addrs[next]
+		}
 		select {
+		case job <- addr:
+			next++
+			active++
+			ready = false
+			if fallbackDelay <= 0 {
+				ready = true
+			} else {
+				if timer == nil {
+					timer = time.NewTimer(fallbackDelay)
+				} else {
+					timer.Reset(fallbackDelay)
+				}
+				timerC = timer.C
+			}
+		case <-timerC:
+			timerC = nil
+			ready = true
 		case result := <-results:
+			active--
 			if result.err == nil {
-				cancel()
-				go closeMCPDialResults(results, len(addrs)-received-1)
+				cleanup()
 				return result.conn, nil
 			}
 			if result.conn != nil {
 				result.conn.Close()
 			}
 			dialErrors = append(dialErrors, result.err)
+			stopTimer()
+			ready = true
 		case <-ctx.Done():
-			cancel()
-			go closeMCPDialResults(results, len(addrs)-received)
+			cleanup()
 			return nil, ctx.Err()
 		}
 	}
-	cancel()
+	cleanup()
 	return nil, errors.Join(dialErrors...)
-}
-
-func closeMCPDialResults(results <-chan mcpDialResult, remaining int) {
-	for range remaining {
-		if result := <-results; result.conn != nil {
-			result.conn.Close()
-		}
-	}
 }
 
 func validateMCPURL(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc) (*url.URL, error) {

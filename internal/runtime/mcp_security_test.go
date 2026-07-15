@@ -241,6 +241,96 @@ func TestMCPDialClosesLateLosingConnection(t *testing.T) {
 	}
 }
 
+func TestMCPDialAttemptBudgetSchedulesLargeAddressSetAsCapacityReturns(t *testing.T) {
+	addrs := make([]netip.Addr, 64)
+	for i := range addrs {
+		addrs[i] = netip.AddrFrom4([4]byte{93, 184, 216, byte(i + 1)})
+	}
+
+	started := make(chan string, len(addrs))
+	release := make(chan struct{}, len(addrs))
+	var active atomic.Int32
+	var maximum atomic.Int32
+	dial := func(_ context.Context, _, address string) (net.Conn, error) {
+		current := active.Add(1)
+		for old := maximum.Load(); current > old && !maximum.CompareAndSwap(old, current); old = maximum.Load() {
+		}
+		started <- address
+		<-release
+		active.Add(-1)
+		return nil, errors.New("unavailable")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := dialMCPAddresses(context.Background(), "tcp", "80", addrs, dial, 0)
+		done <- err
+	}()
+
+	for range mcpDialAttemptBudget {
+		<-started
+	}
+	select {
+	case address := <-started:
+		t.Fatalf("dial started beyond attempt budget: %s", address)
+	default:
+	}
+	if got := maximum.Load(); got != mcpDialAttemptBudget {
+		t.Fatalf("maximum live attempts = %d, want %d", got, mcpDialAttemptBudget)
+	}
+
+	release <- struct{}{}
+	if got, want := <-started, net.JoinHostPort(addrs[mcpDialAttemptBudget].String(), "80"); got != want {
+		t.Fatalf("next scheduled address = %q, want %q", got, want)
+	}
+
+	for i := 0; i < len(addrs)-mcpDialAttemptBudget-1; i++ {
+		release <- struct{}{}
+		<-started
+	}
+	for range mcpDialAttemptBudget {
+		release <- struct{}{}
+	}
+	if err := <-done; err == nil {
+		t.Fatal("dial succeeded, want all-attempts error")
+	}
+	if got := active.Load(); got != 0 {
+		t.Fatalf("live attempts after return = %d, want zero", got)
+	}
+}
+
+func TestMCPDialCancellationJoinsAttemptWorkers(t *testing.T) {
+	addrs := make([]netip.Addr, 32)
+	for i := range addrs {
+		addrs[i] = netip.AddrFrom4([4]byte{93, 184, 216, byte(i + 1)})
+	}
+
+	started := make(chan struct{}, mcpDialAttemptBudget)
+	exited := make(chan struct{}, mcpDialAttemptBudget)
+	dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
+		started <- struct{}{}
+		<-ctx.Done()
+		exited <- struct{}{}
+		return nil, ctx.Err()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := dialMCPAddresses(ctx, "tcp", "80", addrs, dial, 0)
+		done <- err
+	}()
+	for range mcpDialAttemptBudget {
+		<-started
+	}
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("dial error = %v, want context.Canceled", err)
+	}
+	for range mcpDialAttemptBudget {
+		<-exited
+	}
+}
+
 type closeSignalConn struct {
 	net.Conn
 	closed chan struct{}
