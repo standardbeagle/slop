@@ -324,6 +324,23 @@ sum`, 10},
 	}
 }
 
+func TestEvalForClosuresCaptureEachIterationBinding(t *testing.T) {
+	input := `closures = []
+for i in range(3):
+    closures.append(() -> i)
+[closures[0](), closures[1](), closures[2]()]`
+
+	result := testEval(t, input)
+	list, ok := result.(*ListValue)
+	require.True(t, ok, "got: %T", result)
+	require.Len(t, list.Elements, 3)
+	for i, element := range list.Elements {
+		value, ok := element.(*IntValue)
+		require.True(t, ok, "element %d: got %T", i, element)
+		assert.Equal(t, int64(i), value.Value, "element %d", i)
+	}
+}
+
 func TestEvalForParallelFailsLoudly(t *testing.T) {
 	input := `for i in range(3) with parallel(2):
     i`
