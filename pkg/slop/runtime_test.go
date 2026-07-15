@@ -669,6 +669,15 @@ count
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "iteration limit")
 	})
+
+	t.Run("global iteration limit applies to pipeline elements", func(t *testing.T) {
+		rt := NewRuntimeWithConfig(Config{MaxIterations: 2})
+
+		_, err := rt.Execute(`[1, 2, 3] | map(x -> x * 2)`)
+
+		require.EqualError(t, err, "iteration limit exceeded (2)")
+		assert.Equal(t, int64(3), rt.Context().Limits.IterationCount)
+	})
 }
 
 // countingService implements evaluator.Service and counts calls. When llm is

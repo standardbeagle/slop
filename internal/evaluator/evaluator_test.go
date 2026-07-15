@@ -3,6 +3,7 @@ package evaluator
 import (
 	"testing"
 
+	"github.com/standardbeagle/slop/internal/ast"
 	"github.com/standardbeagle/slop/internal/lexer"
 	"github.com/standardbeagle/slop/internal/parser"
 	"github.com/stretchr/testify/assert"
@@ -491,9 +492,39 @@ data.name`
 	assert.Equal(t, "John", sv.Value)
 }
 
-// TestEvalListComprehension is skipped until parser supports comprehensions
-func TestEvalListComprehension(t *testing.T) {
-	t.Skip("List comprehension parsing not yet implemented")
+func TestEvalComprehensionsEnforceGlobalIterationLimit(t *testing.T) {
+	items := &ast.ListLiteral{Elements: []ast.Expression{
+		&ast.IntegerLiteral{Value: 1},
+		&ast.IntegerLiteral{Value: 2},
+		&ast.IntegerLiteral{Value: 3},
+	}}
+
+	tests := map[string]ast.Expression{
+		"list": &ast.ListComprehension{
+			Element:  &ast.Identifier{Value: "item"},
+			Variable: &ast.Identifier{Value: "item"},
+			Iterable: items,
+		},
+		"map": &ast.MapComprehension{
+			Key:      &ast.Identifier{Value: "key"},
+			Value:    &ast.Identifier{Value: "value"},
+			KeyVar:   &ast.Identifier{Value: "key"},
+			ValueVar: &ast.Identifier{Value: "value"},
+			Iterable: items,
+		},
+	}
+
+	for name, expression := range tests {
+		t.Run(name, func(t *testing.T) {
+			limits := &ExecutionLimits{MaxIterations: 2}
+			eval := NewWithContext(NewContextWithLimits(limits))
+
+			_, err := eval.Eval(expression)
+
+			require.EqualError(t, err, "iteration limit exceeded (2)")
+			assert.Equal(t, int64(3), limits.IterationCount)
+		})
+	}
 }
 
 func TestEvalEmit(t *testing.T) {
