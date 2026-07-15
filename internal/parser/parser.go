@@ -710,6 +710,9 @@ func (p *Parser) parseGroupedOrLambda() ast.Expression {
 func (p *Parser) parseListLiteral() ast.Expression {
 	list := &ast.ListLiteral{Token: p.curToken}
 	list.Elements = p.parseExpressionList(lexer.RBRACK)
+	if list.Elements == nil {
+		return nil
+	}
 	return list
 }
 
@@ -750,17 +753,26 @@ func (p *Parser) parseMapLiteralRest(startToken lexer.Token, firstKey ast.Expres
 	}
 	p.nextToken()
 	firstValue := p.parseExpression(LOWEST)
+	if firstValue == nil {
+		return nil
+	}
 	pairs[firstKey] = firstValue
 
 	for p.peekTokenIs(lexer.COMMA) {
 		p.nextToken() // comma
 		p.nextToken() // key
 		key := p.parseExpression(LOWEST)
+		if key == nil {
+			return nil
+		}
 		if !p.expectPeek(lexer.COLON) {
 			return nil
 		}
 		p.nextToken()
 		value := p.parseExpression(LOWEST)
+		if value == nil {
+			return nil
+		}
 		pairs[key] = value
 		order = append(order, key)
 	}
@@ -782,7 +794,11 @@ func (p *Parser) parseSetLiteralRest(startToken lexer.Token, first ast.Expressio
 	for p.peekTokenIs(lexer.COMMA) {
 		p.nextToken() // comma
 		p.nextToken() // element
-		elements = append(elements, p.parseExpression(LOWEST))
+		element := p.parseExpression(LOWEST)
+		if element == nil {
+			return nil
+		}
+		elements = append(elements, element)
 	}
 
 	if !p.expectPeek(lexer.RBRACE) {
@@ -969,6 +985,9 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	}
 
 	exp.Arguments, exp.Kwargs = p.parseCallArguments()
+	if exp.Arguments == nil || exp.Kwargs == nil {
+		return nil
+	}
 	return exp
 }
 
@@ -1004,9 +1023,17 @@ func (p *Parser) parseCallArguments() ([]ast.Expression, map[string]ast.Expressi
 			name := p.curToken.Literal
 			p.nextToken() // colon
 			p.nextToken() // value
-			kwargs[name] = p.parseExpression(LOWEST)
+			value := p.parseExpression(LOWEST)
+			if value == nil {
+				return nil, nil
+			}
+			kwargs[name] = value
 		} else {
-			args = append(args, p.parseExpression(LOWEST))
+			arg := p.parseExpression(LOWEST)
+			if arg == nil {
+				return nil, nil
+			}
+			args = append(args, arg)
 		}
 
 		// Skip whitespace before comma or closing paren
@@ -1170,12 +1197,20 @@ func (p *Parser) parseExpressionList(end lexer.TokenType) []ast.Expression {
 	}
 
 	p.nextToken()
-	list = append(list, p.parseExpression(LOWEST))
+	expression := p.parseExpression(LOWEST)
+	if expression == nil {
+		return nil
+	}
+	list = append(list, expression)
 
 	for p.peekTokenIs(lexer.COMMA) {
 		p.nextToken()
 		p.nextToken()
-		list = append(list, p.parseExpression(LOWEST))
+		expression = p.parseExpression(LOWEST)
+		if expression == nil {
+			return nil
+		}
+		list = append(list, expression)
 	}
 
 	if !p.expectPeek(end) {
@@ -1481,9 +1516,17 @@ func (p *Parser) parseEmitStatement() ast.Statement {
 			name := p.curToken.Literal
 			p.nextToken() // colon
 			p.nextToken() // value
-			stmt.Named[name] = p.parseExpression(LOWEST)
+			value := p.parseExpression(LOWEST)
+			if value == nil {
+				return nil
+			}
+			stmt.Named[name] = value
 		} else {
-			stmt.Values = append(stmt.Values, p.parseExpression(LOWEST))
+			value := p.parseExpression(LOWEST)
+			if value == nil {
+				return nil
+			}
+			stmt.Values = append(stmt.Values, value)
 		}
 
 		if !p.peekTokenIs(lexer.COMMA) {
