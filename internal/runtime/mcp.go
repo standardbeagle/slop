@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -46,19 +47,48 @@ type MCPServiceConfig struct {
 }
 
 type mcpLookupFunc func(context.Context, string) ([]netip.Addr, error)
+type mcpDialFunc func(context.Context, string, string) (net.Conn, error)
 
-var reservedMCPNetworks = []netip.Prefix{
+// specialPurposeMCPNetworks mirrors the IANA IPv4 and IPv6 special-purpose
+// address registries. MCP HTTP transports may only dial ordinary public
+// unicast addresses unless private/loopback access is explicitly enabled.
+var specialPurposeMCPNetworks = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("10.0.0.0/8"),
 	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("127.0.0.0/8"),
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("172.16.0.0/12"),
 	netip.MustParsePrefix("192.0.0.0/24"),
 	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.31.196.0/24"),
+	netip.MustParsePrefix("192.52.193.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+	netip.MustParsePrefix("192.175.48.0/24"),
 	netip.MustParsePrefix("198.18.0.0/15"),
 	netip.MustParsePrefix("198.51.100.0/24"),
 	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("224.0.0.0/4"),
 	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/128"),
+	netip.MustParsePrefix("::1/128"),
+	netip.MustParsePrefix("::ffff:0:0/96"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
 	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001::/23"),
 	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("2620:4f:8000::/48"),
+	netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("5f00::/16"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("ff00::/8"),
 }
+
+var awsIPv6MetadataAddr = netip.MustParseAddr("fd00:ec2::254")
 
 // NewMCPService creates a new MCP service from the given config.
 func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, error) {
@@ -119,15 +149,20 @@ func newMCPHTTPClient(ctx context.Context, rawURL string, allowPrivate bool) (*h
 	lookup := func(ctx context.Context, host string) ([]netip.Addr, error) {
 		return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 	}
-	return newMCPHTTPClientWithLookup(ctx, rawURL, allowPrivate, lookup)
+	dialer := &net.Dialer{}
+	return newMCPHTTPClientWithNetwork(ctx, rawURL, allowPrivate, lookup, dialer.DialContext)
 }
 
 func newMCPHTTPClientWithLookup(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc) (*http.Client, error) {
+	dialer := &net.Dialer{}
+	return newMCPHTTPClientWithNetwork(ctx, rawURL, allowPrivate, lookup, dialer.DialContext)
+}
+
+func newMCPHTTPClientWithNetwork(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc, dial mcpDialFunc) (*http.Client, error) {
 	if _, err := validateMCPURL(ctx, rawURL, allowPrivate, lookup); err != nil {
 		return nil, err
 	}
 
-	dialer := &net.Dialer{}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -139,7 +174,15 @@ func newMCPHTTPClientWithLookup(ctx context.Context, rawURL string, allowPrivate
 		if err != nil {
 			return nil, err
 		}
-		return dialer.DialContext(ctx, network, net.JoinHostPort(addrs[0].String(), port))
+		var dialErrors []error
+		for _, addr := range addrs {
+			conn, err := dial(ctx, network, net.JoinHostPort(addr.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			dialErrors = append(dialErrors, err)
+		}
+		return nil, fmt.Errorf("failed to dial validated MCP host %q: %w", host, errors.Join(dialErrors...))
 	}
 
 	return &http.Client{
@@ -186,11 +229,16 @@ func lookupMCPHost(ctx context.Context, host string, allowPrivate bool, lookup m
 		return nil, fmt.Errorf("unsafe MCP URL: host %q resolved to no addresses", host)
 	}
 	for _, addr := range addrs {
-		if unsafeMCPAddr(addr) && !(allowPrivate && localMCPAddr(addr)) {
+		if metadataMCPAddr(addr) || (unsafeMCPAddr(addr) && !(allowPrivate && localMCPAddr(addr))) {
 			return nil, fmt.Errorf("unsafe MCP URL: host %q resolves to blocked address %s", host, addr)
 		}
 	}
 	return addrs, nil
+}
+
+func metadataMCPAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	return addr == netip.MustParseAddr("169.254.169.254") || addr == awsIPv6MetadataAddr
 }
 
 func localMCPAddr(addr netip.Addr) bool {
@@ -204,7 +252,7 @@ func unsafeMCPAddr(addr netip.Addr) bool {
 		addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
 		return true
 	}
-	for _, prefix := range reservedMCPNetworks {
+	for _, prefix := range specialPurposeMCPNetworks {
 		if prefix.Contains(addr) {
 			return true
 		}

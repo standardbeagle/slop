@@ -97,6 +97,7 @@ func TestSpecialPurposeAddressesAreBlocked(t *testing.T) {
 		"0.1.2.3", "100.64.0.1", "192.0.0.9", "192.31.196.1", "192.52.193.1",
 		"192.88.99.1", "192.175.48.1", "198.18.0.1", "240.0.0.1",
 		"64:ff9b::1", "64:ff9b:1::1", "100::1", "2001::1", "2002::1", "2620:4f:8000::1",
+		"3fff::1", "5f00::1",
 	}
 	for _, raw := range addresses {
 		addr := netip.MustParseAddr(raw)
