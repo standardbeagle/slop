@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"net/http"
 	"net/netip"
 	"strings"
 	"testing"
@@ -44,6 +45,25 @@ func TestNewMCPServiceRejectsUnsafeHTTPURLsBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestMCPHTTPClientRejectsUnsafeRedirect(t *testing.T) {
+	t.Parallel()
+
+	lookup := func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+	}
+	client, err := newMCPHTTPClientWithLookup(context.Background(), "https://mcp.example/mcp", false, lookup)
+	if err != nil {
+		t.Fatalf("newMCPHTTPClientWithLookup: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://169.254.169.254/latest/meta-data", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CheckRedirect(req, nil); err == nil {
+		t.Fatal("redirect to cloud metadata endpoint was accepted")
+	}
+}
+
 func TestValidateMCPURLRejectsAnyUnsafeDNSAnswer(t *testing.T) {
 	t.Parallel()
 
@@ -74,5 +94,8 @@ func TestValidateMCPURLAllowsPublicHTTPAndExplicitPrivateOptIn(t *testing.T) {
 	}
 	if _, err := validateMCPURL(context.Background(), "http://localhost:8080/mcp", true, privateLookup); err != nil {
 		t.Fatalf("opted-in local URL rejected: %v", err)
+	}
+	if _, err := validateMCPURL(context.Background(), "http://169.254.169.254/mcp", true, privateLookup); err == nil {
+		t.Fatal("private-network opt-in accepted a cloud metadata endpoint")
 	}
 }

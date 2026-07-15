@@ -5,11 +5,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/netip"
+	"net/url"
 	"os/exec"
+	"strings"
 	"sync"
 
-	"github.com/standardbeagle/slop/internal/evaluator"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/standardbeagle/slop/internal/evaluator"
 )
 
 // MCPService wraps an MCP client session as a SLOP service.
@@ -35,8 +40,24 @@ type MCPServiceConfig struct {
 	Env     []string // Environment variables
 
 	// For HTTP transports:
-	URL     string            // Server URL
-	Headers map[string]string // HTTP headers
+	URL                 string            // Server URL
+	Headers             map[string]string // HTTP headers
+	AllowPrivateNetwork bool              // Explicitly allow local/private HTTP destinations
+}
+
+type mcpLookupFunc func(context.Context, string) ([]netip.Addr, error)
+
+var reservedMCPNetworks = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:db8::/32"),
 }
 
 // NewMCPService creates a new MCP service from the given config.
@@ -59,13 +80,23 @@ func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, e
 		}
 
 	case "sse":
+		httpClient, err := newMCPHTTPClient(ctx, config.URL, config.AllowPrivateNetwork)
+		if err != nil {
+			return nil, err
+		}
 		transport = &mcp.SSEClientTransport{
-			Endpoint: config.URL,
+			Endpoint:   config.URL,
+			HTTPClient: httpClient,
 		}
 
 	case "streamable":
+		httpClient, err := newMCPHTTPClient(ctx, config.URL, config.AllowPrivateNetwork)
+		if err != nil {
+			return nil, err
+		}
 		transport = &mcp.StreamableClientTransport{
-			Endpoint: config.URL,
+			Endpoint:   config.URL,
+			HTTPClient: httpClient,
 		}
 
 	default:
@@ -82,6 +113,103 @@ func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, e
 		session:   session,
 		transport: transport,
 	}, nil
+}
+
+func newMCPHTTPClient(ctx context.Context, rawURL string, allowPrivate bool) (*http.Client, error) {
+	lookup := func(ctx context.Context, host string) ([]netip.Addr, error) {
+		return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	}
+	return newMCPHTTPClientWithLookup(ctx, rawURL, allowPrivate, lookup)
+}
+
+func newMCPHTTPClientWithLookup(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc) (*http.Client, error) {
+	if _, err := validateMCPURL(ctx, rawURL, allowPrivate, lookup); err != nil {
+		return nil, err
+	}
+
+	dialer := &net.Dialer{}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, fmt.Errorf("unsafe MCP URL: invalid dial address: %w", err)
+		}
+		addrs, err := lookupMCPHost(ctx, host, allowPrivate, lookup)
+		if err != nil {
+			return nil, err
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(addrs[0].String(), port))
+	}
+
+	return &http.Client{
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			_, err := validateMCPURL(req.Context(), req.URL.String(), allowPrivate, lookup)
+			return err
+		},
+	}, nil
+}
+
+func validateMCPURL(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc) (*url.URL, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("unsafe MCP URL: invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("unsafe MCP URL: scheme must be http or https")
+	}
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("unsafe MCP URL: host is required")
+	}
+	if u.User != nil {
+		return nil, fmt.Errorf("unsafe MCP URL: embedded credentials are not allowed")
+	}
+	if _, err := lookupMCPHost(ctx, u.Hostname(), allowPrivate, lookup); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func lookupMCPHost(ctx context.Context, host string, allowPrivate bool, lookup mcpLookupFunc) ([]netip.Addr, error) {
+	var addrs []netip.Addr
+	if literal, err := netip.ParseAddr(strings.TrimSuffix(host, ".")); err == nil {
+		addrs = []netip.Addr{literal}
+	} else {
+		var lookupErr error
+		addrs, lookupErr = lookup(ctx, host)
+		if lookupErr != nil {
+			return nil, fmt.Errorf("unsafe MCP URL: cannot resolve host %q: %w", host, lookupErr)
+		}
+	}
+	if len(addrs) == 0 {
+		return nil, fmt.Errorf("unsafe MCP URL: host %q resolved to no addresses", host)
+	}
+	for _, addr := range addrs {
+		if unsafeMCPAddr(addr) && !(allowPrivate && localMCPAddr(addr)) {
+			return nil, fmt.Errorf("unsafe MCP URL: host %q resolves to blocked address %s", host, addr)
+		}
+	}
+	return addrs, nil
+}
+
+func localMCPAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	return addr.IsPrivate() || addr.IsLoopback()
+}
+
+func unsafeMCPAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	if !addr.IsValid() || !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
+		return true
+	}
+	for _, prefix := range reservedMCPNetworks {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // Name returns the service name.

@@ -15,14 +15,14 @@ import (
 
 // Runtime is the main entry point for executing SLOP scripts.
 type Runtime struct {
-	evaluator        *evaluator.Evaluator
-	registry         *builtin.Registry
-	mcpManager       *runtime.MCPManager
-	llmService       *runtime.LLMService
-	resumable        *evaluator.ResumableEvaluator
-	checkpointDir    string
-	currentScript    string
-	currentProgram   *ast.Program
+	evaluator      *evaluator.Evaluator
+	registry       *builtin.Registry
+	mcpManager     *runtime.MCPManager
+	llmService     *runtime.LLMService
+	resumable      *evaluator.ResumableEvaluator
+	checkpointDir  string
+	currentScript  string
+	currentProgram *ast.Program
 }
 
 // NewRuntime creates a new SLOP runtime with all built-in functions registered.
@@ -159,13 +159,14 @@ func (r *Runtime) Services() map[string]evaluator.Service {
 // The service will be available in scripts as `name.method(args)`.
 func (r *Runtime) ConnectMCP(ctx context.Context, config MCPConfig) error {
 	mcpConfig := runtime.MCPServiceConfig{
-		Name:    config.Name,
-		Type:    config.Type,
-		Command: config.Command,
-		Args:    config.Args,
-		Env:     config.Env,
-		URL:     config.URL,
-		Headers: config.Headers,
+		Name:                config.Name,
+		Type:                config.Type,
+		Command:             config.Command,
+		Args:                config.Args,
+		Env:                 config.Env,
+		URL:                 config.URL,
+		Headers:             config.Headers,
+		AllowPrivateNetwork: config.AllowPrivateNetwork,
 	}
 
 	if err := r.mcpManager.Connect(ctx, mcpConfig); err != nil {
@@ -325,8 +326,9 @@ type MCPConfig struct {
 	Env     []string // Environment variables
 
 	// For HTTP transports:
-	URL     string            // Server URL/endpoint
-	Headers map[string]string // HTTP headers
+	URL                 string            // Server URL/endpoint
+	Headers             map[string]string // HTTP headers
+	AllowPrivateNetwork bool              // Explicitly allow local/private HTTP destinations
 }
 
 // pipelineCaller implements the builtin.PipelineFuncCaller interface.
