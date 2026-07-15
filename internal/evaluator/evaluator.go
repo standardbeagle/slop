@@ -1247,10 +1247,8 @@ type BoundMethodValue struct {
 	Method      string
 }
 
-func (b *BoundMethodValue) Type() string { return "bound_method" }
-func (b *BoundMethodValue) String() string {
-	return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method)
-}
+func (b *BoundMethodValue) Type() string   { return "bound_method" }
+func (b *BoundMethodValue) String() string { return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method) }
 func (b *BoundMethodValue) IsTruthy() bool { return true }
 
 // getMethod is defined in builtins.go

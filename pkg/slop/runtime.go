@@ -15,14 +15,14 @@ import (
 
 // Runtime is the main entry point for executing SLOP scripts.
 type Runtime struct {
-	evaluator      *evaluator.Evaluator
-	registry       *builtin.Registry
-	mcpManager     *runtime.MCPManager
-	llmService     *runtime.LLMService
-	resumable      *evaluator.ResumableEvaluator
-	checkpointDir  string
-	currentScript  string
-	currentProgram *ast.Program
+	evaluator        *evaluator.Evaluator
+	registry         *builtin.Registry
+	mcpManager       *runtime.MCPManager
+	llmService       *runtime.LLMService
+	resumable        *evaluator.ResumableEvaluator
+	checkpointDir    string
+	currentScript    string
+	currentProgram   *ast.Program
 }
 
 // NewRuntime creates a new SLOP runtime with all built-in functions registered.
