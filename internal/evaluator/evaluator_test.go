@@ -72,6 +72,11 @@ func TestEvalFloatExpression(t *testing.T) {
 		{"5.0 / 2.0", 2.5},
 		{"5 / 2.0", 2.5},
 		{"5.0 / 2", 2.5},
+		{"5.5 % 2", 1.5},
+		{"5 % 2.5", 0.0},
+		{"2.0 ** 0.5", 1.4142135623730951},
+		{"2 ** -1.0", 0.5},
+		{"9.0 ** 2", 81.0},
 	}
 
 	for _, tt := range tests {
@@ -79,6 +84,28 @@ func TestEvalFloatExpression(t *testing.T) {
 		fv, ok := result.(*FloatValue)
 		require.True(t, ok, "input: %s, got: %T", tt.input, result)
 		assert.InDelta(t, tt.expected, fv.Value, 0.0001, "input: %s", tt.input)
+	}
+}
+
+func TestEvalNumericZeroErrors(t *testing.T) {
+	tests := []struct {
+		input   string
+		message string
+	}{
+		{"1 / 0", "division by zero"},
+		{"1.0 / 0", "division by zero"},
+		{"1 % 0", "modulo by zero"},
+		{"1.0 % 0", "modulo by zero"},
+	}
+
+	for _, tt := range tests {
+		l := lexer.New(tt.input)
+		p := parser.New(l)
+		program := p.ParseProgram()
+		require.Empty(t, p.Errors(), "input: %s", tt.input)
+
+		_, err := New().Eval(program)
+		require.EqualError(t, err, tt.message, "input: %s", tt.input)
 	}
 }
 
