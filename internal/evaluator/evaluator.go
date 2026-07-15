@@ -3,6 +3,7 @@ package evaluator
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -702,16 +703,9 @@ func (e *Evaluator) numericOp(op string, left, right Value) (Value, error) {
 			if rf == 0 {
 				return nil, fmt.Errorf("modulo by zero")
 			}
-			// Convert to int for modulo
-			li := int64(lf)
-			ri := int64(rf)
-			return &FloatValue{Value: float64(li % ri)}, nil
+			return &FloatValue{Value: math.Mod(lf, rf)}, nil
 		case "**":
-			result := 1.0
-			for i := 0; i < int(rf); i++ {
-				result *= lf
-			}
-			return &FloatValue{Value: result}, nil
+			return &FloatValue{Value: math.Pow(lf, rf)}, nil
 		}
 	}
 
@@ -1247,8 +1241,10 @@ type BoundMethodValue struct {
 	Method      string
 }
 
-func (b *BoundMethodValue) Type() string   { return "bound_method" }
-func (b *BoundMethodValue) String() string { return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method) }
+func (b *BoundMethodValue) Type() string { return "bound_method" }
+func (b *BoundMethodValue) String() string {
+	return fmt.Sprintf("<method %s.%s>", b.ServiceName, b.Method)
+}
 func (b *BoundMethodValue) IsTruthy() bool { return true }
 
 // getMethod is defined in builtins.go
