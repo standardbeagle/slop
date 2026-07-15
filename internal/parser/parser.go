@@ -513,6 +513,9 @@ func (p *Parser) parseAssignmentOrExpressionStatement() ast.Statement {
 
 		p.nextToken() // move to value
 		stmt.Value = p.parseExpression(LOWEST)
+		if stmt.Value == nil {
+			return nil
+		}
 
 		// Skip trailing newline
 		if p.peekTokenIs(lexer.NEWLINE) {
