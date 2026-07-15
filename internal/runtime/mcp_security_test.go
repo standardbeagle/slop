@@ -187,6 +187,50 @@ func TestMCPDialStaggersCandidatesWithoutReresolving(t *testing.T) {
 	}
 }
 
+func TestMCPDialClosesLateLosingConnection(t *testing.T) {
+	t.Parallel()
+
+	addrs := []netip.Addr{netip.MustParseAddr("93.184.216.34"), netip.MustParseAddr("93.184.216.35")}
+	lookup := func(context.Context, string) ([]netip.Addr, error) { return addrs, nil }
+	loserClosed := make(chan struct{})
+	dial := func(ctx context.Context, _, address string) (net.Conn, error) {
+		client, server := net.Pipe()
+		server.Close()
+		if address == addrs[0].String()+":80" {
+			<-ctx.Done()
+			return &closeSignalConn{Conn: client, closed: loserClosed}, nil
+		}
+		return client, nil
+	}
+	client, err := newMCPHTTPClientWithNetworkDelay(
+		context.Background(), "http://mcp.example/mcp", false, lookup, dial, time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := client.Transport.(*http.Transport).DialContext(context.Background(), "tcp", "mcp.example:80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close()
+	select {
+	case <-loserClosed:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("late losing connection was not closed")
+	}
+}
+
+type closeSignalConn struct {
+	net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (c *closeSignalConn) Close() error {
+	c.once.Do(func() { close(c.closed) })
+	return c.Conn.Close()
+}
+
 func TestMCPHTTPClientRejectsUnsafeRedirect(t *testing.T) {
 	t.Parallel()
 

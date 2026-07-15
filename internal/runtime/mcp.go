@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/standardbeagle/slop/internal/evaluator"
@@ -85,10 +86,13 @@ var specialPurposeMCPNetworks = []netip.Prefix{
 	netip.MustParsePrefix("5f00::/16"),
 	netip.MustParsePrefix("fc00::/7"),
 	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fec0::/10"),
 	netip.MustParsePrefix("ff00::/8"),
 }
 
 var awsIPv6MetadataAddr = netip.MustParseAddr("fd00:ec2::254")
+
+const mcpDialFallbackDelay = 250 * time.Millisecond
 
 // NewMCPService creates a new MCP service from the given config.
 func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, error) {
@@ -159,6 +163,10 @@ func newMCPHTTPClientWithLookup(ctx context.Context, rawURL string, allowPrivate
 }
 
 func newMCPHTTPClientWithNetwork(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc, dial mcpDialFunc) (*http.Client, error) {
+	return newMCPHTTPClientWithNetworkDelay(ctx, rawURL, allowPrivate, lookup, dial, mcpDialFallbackDelay)
+}
+
+func newMCPHTTPClientWithNetworkDelay(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc, dial mcpDialFunc, fallbackDelay time.Duration) (*http.Client, error) {
 	if _, err := validateMCPURL(ctx, rawURL, allowPrivate, lookup); err != nil {
 		return nil, err
 	}
@@ -174,15 +182,11 @@ func newMCPHTTPClientWithNetwork(ctx context.Context, rawURL string, allowPrivat
 		if err != nil {
 			return nil, err
 		}
-		var dialErrors []error
-		for _, addr := range addrs {
-			conn, err := dial(ctx, network, net.JoinHostPort(addr.String(), port))
-			if err == nil {
-				return conn, nil
-			}
-			dialErrors = append(dialErrors, err)
+		conn, err := dialMCPAddresses(ctx, network, port, addrs, dial, fallbackDelay)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial validated MCP host %q: %w", host, err)
 		}
-		return nil, fmt.Errorf("failed to dial validated MCP host %q: %w", host, errors.Join(dialErrors...))
+		return conn, nil
 	}
 
 	return &http.Client{
@@ -192,6 +196,63 @@ func newMCPHTTPClientWithNetwork(ctx context.Context, rawURL string, allowPrivat
 			return err
 		},
 	}, nil
+}
+
+type mcpDialResult struct {
+	conn net.Conn
+	err  error
+}
+
+func dialMCPAddresses(ctx context.Context, network, port string, addrs []netip.Addr, dial mcpDialFunc, fallbackDelay time.Duration) (net.Conn, error) {
+	dialCtx, cancel := context.WithCancel(ctx)
+	results := make(chan mcpDialResult, len(addrs))
+	for i, addr := range addrs {
+		delay := time.Duration(i) * fallbackDelay
+		go func() {
+			if delay > 0 {
+				timer := time.NewTimer(delay)
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+				case <-dialCtx.Done():
+					results <- mcpDialResult{err: dialCtx.Err()}
+					return
+				}
+			}
+			conn, err := dial(dialCtx, network, net.JoinHostPort(addr.String(), port))
+			results <- mcpDialResult{conn: conn, err: err}
+		}()
+	}
+
+	var dialErrors []error
+	for received := 0; received < len(addrs); received++ {
+		select {
+		case result := <-results:
+			if result.err == nil {
+				cancel()
+				go closeMCPDialResults(results, len(addrs)-received-1)
+				return result.conn, nil
+			}
+			if result.conn != nil {
+				result.conn.Close()
+			}
+			dialErrors = append(dialErrors, result.err)
+		case <-ctx.Done():
+			cancel()
+			go closeMCPDialResults(results, len(addrs)-received)
+			return nil, ctx.Err()
+		}
+	}
+	cancel()
+	return nil, errors.Join(dialErrors...)
+}
+
+func closeMCPDialResults(results <-chan mcpDialResult, remaining int) {
+	for range remaining {
+		if result := <-results; result.conn != nil {
+			result.conn.Close()
+		}
+	}
 }
 
 func validateMCPURL(ctx context.Context, rawURL string, allowPrivate bool, lookup mcpLookupFunc) (*url.URL, error) {
