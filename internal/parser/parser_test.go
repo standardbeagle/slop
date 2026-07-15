@@ -255,6 +255,11 @@ func TestMalformedCollectionExpressionsDoNotRetainNilNodes(t *testing.T) {
 		`call(value: +)`,
 		`emit(1, +)`,
 		`emit(value: +)`,
+		`value = [1, +]`,
+		`value = {a: +}`,
+		`value = {1, +}`,
+		`value = call(1, +)`,
+		`value = call(arg: +)`,
 	}
 
 	for _, input := range tests {
