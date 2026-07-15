@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -42,6 +44,97 @@ func TestNewMCPServiceRejectsUnsafeHTTPURLsBeforeConnecting(t *testing.T) {
 				t.Fatalf("NewMCPService(%q) error = %v, want unsafe MCP URL", tt.url, err)
 			}
 		})
+	}
+}
+
+func TestMetadataEndpointsRemainBlockedWithPrivateOptIn(t *testing.T) {
+	t.Parallel()
+
+	metadata := []netip.Addr{
+		netip.MustParseAddr("169.254.169.254"),
+		netip.MustParseAddr("::ffff:169.254.169.254"),
+		netip.MustParseAddr("fd00:ec2::254"),
+	}
+	for _, addr := range metadata {
+		addr := addr
+		t.Run(addr.String(), func(t *testing.T) {
+			t.Parallel()
+			literalURL := "http://" + addr.String() + "/mcp"
+			if addr.Is6() {
+				literalURL = "http://[" + addr.String() + "]/mcp"
+			}
+			if _, err := validateMCPURL(context.Background(), literalURL, true, nil); err == nil {
+				t.Fatal("metadata literal accepted with private opt-in")
+			}
+
+			lookup := func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{addr}, nil }
+			if _, err := validateMCPURL(context.Background(), "http://metadata.internal/mcp", true, lookup); err == nil {
+				t.Fatal("metadata DNS answer accepted with private opt-in")
+			}
+
+			publicLookup := func(context.Context, string) ([]netip.Addr, error) {
+				return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
+			}
+			client, err := newMCPHTTPClientWithLookup(context.Background(), "https://mcp.example/mcp", true, publicLookup)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := http.NewRequest(http.MethodGet, literalURL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := client.CheckRedirect(req, nil); err == nil {
+				t.Fatal("metadata redirect accepted with private opt-in")
+			}
+		})
+	}
+}
+
+func TestSpecialPurposeAddressesAreBlocked(t *testing.T) {
+	t.Parallel()
+
+	addresses := []string{
+		"0.1.2.3", "100.64.0.1", "192.0.0.9", "192.31.196.1", "192.52.193.1",
+		"192.88.99.1", "192.175.48.1", "198.18.0.1", "240.0.0.1",
+		"64:ff9b::1", "64:ff9b:1::1", "100::1", "2001::1", "2002::1", "2620:4f:8000::1",
+	}
+	for _, raw := range addresses {
+		addr := netip.MustParseAddr(raw)
+		if !unsafeMCPAddr(addr) {
+			t.Errorf("unsafeMCPAddr(%s) = false, want true", addr)
+		}
+	}
+}
+
+func TestMCPDialFallsBackAcrossValidatedAddresses(t *testing.T) {
+	t.Parallel()
+
+	first := netip.MustParseAddr("93.184.216.34")
+	second := netip.MustParseAddr("93.184.216.35")
+	lookup := func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{first, second}, nil }
+	var attempted []string
+	dial := func(_ context.Context, _, address string) (net.Conn, error) {
+		attempted = append(attempted, address)
+		if len(attempted) == 1 {
+			return nil, errors.New("first address unavailable")
+		}
+		client, server := net.Pipe()
+		server.Close()
+		return client, nil
+	}
+	client, err := newMCPHTTPClientWithNetwork(context.Background(), "http://mcp.example/mcp", false, lookup, dial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := client.Transport.(*http.Transport)
+	conn, err := transport.DialContext(context.Background(), "tcp", "mcp.example:80")
+	if err != nil {
+		t.Fatalf("DialContext did not fall back: %v", err)
+	}
+	conn.Close()
+	want := []string{first.String() + ":80", second.String() + ":80"}
+	if len(attempted) != 2 || attempted[0] != want[0] || attempted[1] != want[1] {
+		t.Fatalf("attempted = %v, want %v", attempted, want)
 	}
 }
 
