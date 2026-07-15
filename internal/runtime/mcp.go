@@ -105,12 +105,8 @@ func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, e
 
 	switch config.Type {
 	case "command", "":
-		cmd := exec.Command(config.Command, config.Args...)
-		if len(config.Env) > 0 {
-			cmd.Env = config.Env
-		}
 		transport = &mcp.CommandTransport{
-			Command: cmd,
+			Command: newMCPCommand(config),
 		}
 
 	case "sse":
@@ -147,6 +143,12 @@ func NewMCPService(ctx context.Context, config MCPServiceConfig) (*MCPService, e
 		session:   session,
 		transport: transport,
 	}, nil
+}
+
+func newMCPCommand(config MCPServiceConfig) *exec.Cmd {
+	cmd := exec.Command(config.Command, config.Args...)
+	cmd.Env = append([]string{}, config.Env...)
+	return cmd
 }
 
 func newMCPHTTPClient(ctx context.Context, rawURL string, allowPrivate bool) (*http.Client, error) {

@@ -13,6 +13,27 @@ import (
 	"time"
 )
 
+func TestNewMCPCommandUsesExplicitEnvironmentOnly(t *testing.T) {
+	cmd := newMCPCommand(MCPServiceConfig{Command: "go"})
+	if cmd.Env == nil {
+		t.Fatal("command environment is nil, which inherits the host environment")
+	}
+	if len(cmd.Env) != 0 {
+		t.Fatalf("default command environment = %v, want empty", cmd.Env)
+	}
+	if cmd.Path == "" || cmd.Path == "go" {
+		t.Fatalf("command path = %q, want executable resolved from host PATH", cmd.Path)
+	}
+
+	cmd = newMCPCommand(MCPServiceConfig{
+		Command: "go",
+		Env:     []string{"MCP_ALLOWED=value"},
+	})
+	if got, want := cmd.Env, []string{"MCP_ALLOWED=value"}; len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("explicit command environment = %v, want %v", got, want)
+	}
+}
+
 func TestNewMCPServiceRejectsUnsafeHTTPURLsBeforeConnecting(t *testing.T) {
 	t.Parallel()
 
