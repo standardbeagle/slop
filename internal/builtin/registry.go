@@ -13,7 +13,8 @@ type BuiltinFunc func(args []evaluator.Value, kwargs map[string]evaluator.Value)
 
 // Registry holds all registered built-in functions.
 type Registry struct {
-	functions map[string]BuiltinFunc
+	functions          map[string]BuiltinFunc
+	pipelineFuncCaller PipelineFuncCaller
 }
 
 // NewRegistry creates a new registry with all built-in functions registered.

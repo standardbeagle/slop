@@ -12,65 +12,62 @@ type PipelineFuncCaller interface {
 	CallFunction(fn evaluator.Value, args []evaluator.Value) (evaluator.Value, error)
 }
 
-// SetFuncCaller sets the function caller for pipeline operations.
-// This should be called by the evaluator before using pipeline functions.
-var pipelineFuncCaller PipelineFuncCaller
-
-func SetPipelineFuncCaller(caller PipelineFuncCaller) {
-	pipelineFuncCaller = caller
+// SetPipelineFuncCaller binds pipeline callbacks to this registry's evaluator.
+func (r *Registry) SetPipelineFuncCaller(caller PipelineFuncCaller) {
+	r.pipelineFuncCaller = caller
 }
 
 func (r *Registry) registerPipelineFunctions() {
 	// Transformation
-	r.Register("map", builtinMap)
-	r.Register("flat_map", builtinFlatMap)
+	r.Register("map", r.builtinMap)
+	r.Register("flat_map", r.builtinFlatMap)
 
 	// Filtering
-	r.Register("filter", builtinFilter)
-	r.Register("reject", builtinReject)
+	r.Register("filter", r.builtinFilter)
+	r.Register("reject", r.builtinReject)
 	r.Register("compact", builtinCompact)
-	r.Register("unique", builtinUnique)
-	r.Register("dedup", builtinDedup)
+	r.Register("unique", r.builtinUnique)
+	r.Register("dedup", r.builtinDedup)
 
 	// Selection
 	r.Register("take", builtinTake)
 	r.Register("drop", builtinDrop)
-	r.Register("take_while", builtinTakeWhile)
-	r.Register("drop_while", builtinDropWhile)
+	r.Register("take_while", r.builtinTakeWhile)
+	r.Register("drop_while", r.builtinDropWhile)
 	r.Register("nth", builtinNth)
 
 	// Grouping
-	r.Register("group", builtinGroup)
-	r.Register("group_by", builtinGroupBy)
-	r.Register("partition", builtinPartition)
+	r.Register("group", r.builtinGroup)
+	r.Register("group_by", r.builtinGroupBy)
+	r.Register("partition", r.builtinPartition)
 	r.Register("chunk", builtinChunk)
 	r.Register("window", builtinWindow)
 
 	// Aggregation
-	r.Register("reduce", builtinReduce)
-	r.Register("avg", builtinAvg)
-	r.Register("any", builtinAny)
-	r.Register("all", builtinAll)
-	r.Register("none", builtinNoneFunc)
-	r.Register("find", builtinFindValue)
-	r.Register("find_index", builtinFindIndex)
+	r.Register("reduce", r.builtinReduce)
+	r.Register("avg", r.builtinAvg)
+	r.Register("any", r.builtinAny)
+	r.Register("all", r.builtinAll)
+	r.Register("none", r.builtinNoneFunc)
+	r.Register("find", r.builtinFindValue)
+	r.Register("find_index", r.builtinFindIndex)
 
 	// Combination
 	r.Register("concat", builtinConcat)
-	r.Register("zip_with", builtinZipWith)
+	r.Register("zip_with", r.builtinZipWith)
 	r.Register("interleave", builtinInterleave)
 }
 
-func callFunction(fn evaluator.Value, args []evaluator.Value) (evaluator.Value, error) {
-	if pipelineFuncCaller == nil {
+func (r *Registry) callFunction(fn evaluator.Value, args []evaluator.Value) (evaluator.Value, error) {
+	if r.pipelineFuncCaller == nil {
 		return nil, fmt.Errorf("pipeline function caller not set")
 	}
-	return pipelineFuncCaller.CallFunction(fn, args)
+	return r.pipelineFuncCaller.CallFunction(fn, args)
 }
 
 // Transformation
 
-func builtinMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("map", args, 2); err != nil {
 		return nil, err
 	}
@@ -88,7 +85,7 @@ func builtinMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 
 	result := make([]evaluator.Value, len(list))
 	for i, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +95,7 @@ func builtinMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	return &evaluator.ListValue{Elements: result}, nil
 }
 
-func builtinFlatMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinFlatMap(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("flat_map", args, 2); err != nil {
 		return nil, err
 	}
@@ -116,7 +113,7 @@ func builtinFlatMap(args []evaluator.Value, _ map[string]evaluator.Value) (evalu
 
 	result := make([]evaluator.Value, 0)
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +129,7 @@ func builtinFlatMap(args []evaluator.Value, _ map[string]evaluator.Value) (evalu
 
 // Filtering
 
-func builtinFilter(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinFilter(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("filter", args, 2); err != nil {
 		return nil, err
 	}
@@ -150,7 +147,7 @@ func builtinFilter(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 
 	result := make([]evaluator.Value, 0)
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -162,7 +159,7 @@ func builtinFilter(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 	return &evaluator.ListValue{Elements: result}, nil
 }
 
-func builtinReject(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinReject(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("reject", args, 2); err != nil {
 		return nil, err
 	}
@@ -180,7 +177,7 @@ func builtinReject(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 
 	result := make([]evaluator.Value, 0)
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +209,7 @@ func builtinCompact(args []evaluator.Value, _ map[string]evaluator.Value) (evalu
 	return &evaluator.ListValue{Elements: result}, nil
 }
 
-func builtinUnique(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinUnique(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireRangeArgs("unique", args, 1, 2); err != nil {
 		return nil, err
 	}
@@ -236,7 +233,7 @@ func builtinUnique(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 	for _, item := range list {
 		var key string
 		if keyFn != nil {
-			keyVal, err := callFunction(keyFn, []evaluator.Value{item})
+			keyVal, err := r.callFunction(keyFn, []evaluator.Value{item})
 			if err != nil {
 				return nil, err
 			}
@@ -254,17 +251,17 @@ func builtinUnique(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 	return &evaluator.ListValue{Elements: result}, nil
 }
 
-func builtinDedup(args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinDedup(args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
 	// dedup is an alias for unique with optional "by" kwarg
 	if err := requireArgs("dedup", args, 1); err != nil {
 		return nil, err
 	}
 
 	if byFn, ok := kwargs["by"]; ok {
-		return builtinUnique([]evaluator.Value{args[0], byFn}, nil)
+		return r.builtinUnique([]evaluator.Value{args[0], byFn}, nil)
 	}
 
-	return builtinUnique(args, nil)
+	return r.builtinUnique(args, nil)
 }
 
 // Selection
@@ -319,7 +316,7 @@ func builtinDrop(args []evaluator.Value, _ map[string]evaluator.Value) (evaluato
 	return &evaluator.ListValue{Elements: list[n:]}, nil
 }
 
-func builtinTakeWhile(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinTakeWhile(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("take_while", args, 2); err != nil {
 		return nil, err
 	}
@@ -337,7 +334,7 @@ func builtinTakeWhile(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 
 	result := make([]evaluator.Value, 0)
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -350,7 +347,7 @@ func builtinTakeWhile(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	return &evaluator.ListValue{Elements: result}, nil
 }
 
-func builtinDropWhile(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinDropWhile(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("drop_while", args, 2); err != nil {
 		return nil, err
 	}
@@ -370,7 +367,7 @@ func builtinDropWhile(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	result := make([]evaluator.Value, 0)
 	for _, item := range list {
 		if dropping {
-			val, err := callFunction(fn, []evaluator.Value{item})
+			val, err := r.callFunction(fn, []evaluator.Value{item})
 			if err != nil {
 				return nil, err
 			}
@@ -414,7 +411,7 @@ func builtinNth(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 
 // Grouping
 
-func builtinGroup(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinGroup(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("group", args, 2); err != nil {
 		return nil, err
 	}
@@ -432,7 +429,7 @@ func builtinGroup(args []evaluator.Value, _ map[string]evaluator.Value) (evaluat
 
 	groups := make(map[string][]evaluator.Value)
 	for _, item := range list {
-		keyVal, err := callFunction(fn, []evaluator.Value{item})
+		keyVal, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -448,12 +445,12 @@ func builtinGroup(args []evaluator.Value, _ map[string]evaluator.Value) (evaluat
 	return &evaluator.MapValue{Pairs: result}, nil
 }
 
-func builtinGroupBy(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinGroupBy(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	// group_by is an alias for group
-	return builtinGroup(args, nil)
+	return r.builtinGroup(args, nil)
 }
 
-func builtinPartition(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinPartition(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("partition", args, 2); err != nil {
 		return nil, err
 	}
@@ -473,7 +470,7 @@ func builtinPartition(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	nonMatches := make([]evaluator.Value, 0)
 
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -552,7 +549,7 @@ func builtinWindow(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 
 // Aggregation
 
-func builtinReduce(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinReduce(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("reduce", args, 3); err != nil {
 		return nil, err
 	}
@@ -572,7 +569,7 @@ func builtinReduce(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 
 	acc := init
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{acc, item})
+		val, err := r.callFunction(fn, []evaluator.Value{acc, item})
 		if err != nil {
 			return nil, err
 		}
@@ -582,7 +579,7 @@ func builtinReduce(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 	return acc, nil
 }
 
-func builtinAvg(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinAvg(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireRangeArgs("avg", args, 1, 2); err != nil {
 		return nil, err
 	}
@@ -608,7 +605,7 @@ func builtinAvg(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	for _, item := range list {
 		var val evaluator.Value = item
 		if keyFn != nil {
-			val, err = callFunction(keyFn, []evaluator.Value{item})
+			val, err = r.callFunction(keyFn, []evaluator.Value{item})
 			if err != nil {
 				return nil, err
 			}
@@ -623,7 +620,7 @@ func builtinAvg(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	return &evaluator.FloatValue{Value: sum / float64(len(list))}, nil
 }
 
-func builtinAny(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinAny(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireRangeArgs("any", args, 1, 2); err != nil {
 		return nil, err
 	}
@@ -644,7 +641,7 @@ func builtinAny(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	for _, item := range list {
 		var result evaluator.Value = item
 		if fn != nil {
-			result, err = callFunction(fn, []evaluator.Value{item})
+			result, err = r.callFunction(fn, []evaluator.Value{item})
 			if err != nil {
 				return nil, err
 			}
@@ -657,7 +654,7 @@ func builtinAny(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	return evaluator.FALSE, nil
 }
 
-func builtinAll(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinAll(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireRangeArgs("all", args, 1, 2); err != nil {
 		return nil, err
 	}
@@ -678,7 +675,7 @@ func builtinAll(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	for _, item := range list {
 		var result evaluator.Value = item
 		if fn != nil {
-			result, err = callFunction(fn, []evaluator.Value{item})
+			result, err = r.callFunction(fn, []evaluator.Value{item})
 			if err != nil {
 				return nil, err
 			}
@@ -691,7 +688,7 @@ func builtinAll(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator
 	return evaluator.TRUE, nil
 }
 
-func builtinNoneFunc(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinNoneFunc(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireRangeArgs("none", args, 1, 2); err != nil {
 		return nil, err
 	}
@@ -712,7 +709,7 @@ func builtinNoneFunc(args []evaluator.Value, _ map[string]evaluator.Value) (eval
 	for _, item := range list {
 		var result evaluator.Value = item
 		if fn != nil {
-			result, err = callFunction(fn, []evaluator.Value{item})
+			result, err = r.callFunction(fn, []evaluator.Value{item})
 			if err != nil {
 				return nil, err
 			}
@@ -725,7 +722,7 @@ func builtinNoneFunc(args []evaluator.Value, _ map[string]evaluator.Value) (eval
 	return evaluator.TRUE, nil
 }
 
-func builtinFindValue(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinFindValue(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("find", args, 2); err != nil {
 		return nil, err
 	}
@@ -742,7 +739,7 @@ func builtinFindValue(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	}
 
 	for _, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -754,7 +751,7 @@ func builtinFindValue(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	return evaluator.NONE, nil
 }
 
-func builtinFindIndex(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinFindIndex(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("find_index", args, 2); err != nil {
 		return nil, err
 	}
@@ -771,7 +768,7 @@ func builtinFindIndex(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	}
 
 	for i, item := range list {
-		val, err := callFunction(fn, []evaluator.Value{item})
+		val, err := r.callFunction(fn, []evaluator.Value{item})
 		if err != nil {
 			return nil, err
 		}
@@ -802,7 +799,7 @@ func builtinConcat(args []evaluator.Value, _ map[string]evaluator.Value) (evalua
 	return &evaluator.ListValue{Elements: result}, nil
 }
 
-func builtinZipWith(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
+func (r *Registry) builtinZipWith(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
 	if err := requireArgs("zip_with", args, 3); err != nil {
 		return nil, err
 	}
@@ -830,7 +827,7 @@ func builtinZipWith(args []evaluator.Value, _ map[string]evaluator.Value) (evalu
 
 	result := make([]evaluator.Value, minLen)
 	for i := 0; i < minLen; i++ {
-		val, err := callFunction(fn, []evaluator.Value{list1[i], list2[i]})
+		val, err := r.callFunction(fn, []evaluator.Value{list1[i], list2[i]})
 		if err != nil {
 			return nil, err
 		}

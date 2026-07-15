@@ -35,7 +35,7 @@ func NewRuntime() *Runtime {
 	eval.Context().RegisterBuiltins(registry)
 
 	// Set up the pipeline function caller
-	builtin.SetPipelineFuncCaller(&pipelineCaller{eval: eval})
+	registry.SetPipelineFuncCaller(&pipelineCaller{eval: eval})
 
 	// Create default LLM service with mock client (for testing)
 	llmSvc := runtime.NewLLMService(&runtime.MockLLMClient{})
@@ -61,7 +61,7 @@ func NewRuntimeWithContext(ctx *evaluator.Context) *Runtime {
 	ctx.RegisterBuiltins(registry)
 
 	// Set up the pipeline function caller
-	builtin.SetPipelineFuncCaller(&pipelineCaller{eval: eval})
+	registry.SetPipelineFuncCaller(&pipelineCaller{eval: eval})
 
 	// Create default LLM service with mock client (for testing)
 	llmSvc := runtime.NewLLMService(&runtime.MockLLMClient{})
