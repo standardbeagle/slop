@@ -1442,7 +1442,9 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 			break
 		}
 
-		// Bind loop variables
+		// Give closures a stable binding for this iteration rather than
+		// reusing the loop scope's variables on the next iteration.
+		e.frame.PushScope()
 		if node.Index != nil {
 			e.frame.Scope.Set(node.Index.Value, &IntValue{Value: index})
 		}
@@ -1450,6 +1452,7 @@ func (e *Evaluator) evalForStatement(node *ast.ForStatement) (Value, error) {
 
 		// Execute body
 		result, err = e.evalBlock(node.Body)
+		e.frame.PopScope()
 		if err != nil {
 			return nil, err
 		}
