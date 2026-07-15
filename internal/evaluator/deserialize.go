@@ -226,11 +226,22 @@ func (d *Deserializer) DeserializeValue(sv *SerializedValue) (Value, error) {
 		if err := json.Unmarshal(sv.Data, &name); err != nil {
 			return nil, fmt.Errorf("deserializing service name: %w", err)
 		}
-		if svc, ok := d.services[name]; ok {
-			return &ServiceValue{Name: name, Service: svc}, nil
+		svc, err := d.checkpointService(name)
+		if err != nil {
+			return nil, err
 		}
-		// Service not available - create placeholder
-		return &ServiceValue{Name: name, Service: nil}, nil
+		return &ServiceValue{Name: name, Service: svc}, nil
+
+	case "bound_method":
+		var ref BoundMethodRef
+		if err := json.Unmarshal(sv.Data, &ref); err != nil {
+			return nil, fmt.Errorf("deserializing bound method: %w", err)
+		}
+		svc, err := d.checkpointService(ref.Service)
+		if err != nil {
+			return nil, err
+		}
+		return &BoundMethodValue{ServiceName: ref.Service, Service: svc, Method: ref.Method}, nil
 
 	case "error":
 		return d.deserializeError(sv.Data)
@@ -241,6 +252,13 @@ func (d *Deserializer) DeserializeValue(sv *SerializedValue) (Value, error) {
 	default:
 		return nil, fmt.Errorf("unknown value type: %s", sv.Type)
 	}
+}
+
+func (d *Deserializer) checkpointService(name string) (Service, error) {
+	if svc, ok := d.services[name]; ok && svc != nil {
+		return svc, nil
+	}
+	return nil, fmt.Errorf("checkpoint service %q is unavailable", name)
 }
 
 func (d *Deserializer) deserializeList(data json.RawMessage) (*ListValue, error) {

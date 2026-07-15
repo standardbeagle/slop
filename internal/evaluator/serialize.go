@@ -87,6 +87,12 @@ type LambdaRef struct {
 	ParameterNames []string  `json:"parameter_names,omitempty"`
 }
 
+// BoundMethodRef identifies a service method that can be rebound on restore.
+type BoundMethodRef struct {
+	Service string `json:"service"`
+	Method  string `json:"method"`
+}
+
 // SerializedError represents an error value.
 type SerializedError struct {
 	Message string           `json:"message"`
@@ -227,6 +233,13 @@ func (s *Serializer) SerializeValue(v Value) (*SerializedValue, error) {
 	case *ServiceValue:
 		data, _ := json.Marshal(val.Name)
 		return &SerializedValue{Type: "service", Data: data}, nil
+
+	case *BoundMethodValue:
+		data, _ := json.Marshal(BoundMethodRef{Service: val.ServiceName, Method: val.Method})
+		return &SerializedValue{Type: "bound_method", Data: data}, nil
+
+	case *ModuleValue:
+		return nil, fmt.Errorf("checkpoint does not support module %q", val.Name)
 
 	case *SlopError:
 		return s.serializeError(val)
