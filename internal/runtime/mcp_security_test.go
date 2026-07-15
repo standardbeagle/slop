@@ -7,7 +7,10 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestNewMCPServiceRejectsUnsafeHTTPURLsBeforeConnecting(t *testing.T) {
@@ -97,7 +100,7 @@ func TestSpecialPurposeAddressesAreBlocked(t *testing.T) {
 		"0.1.2.3", "100.64.0.1", "192.0.0.9", "192.31.196.1", "192.52.193.1",
 		"192.88.99.1", "192.175.48.1", "198.18.0.1", "240.0.0.1",
 		"64:ff9b::1", "64:ff9b:1::1", "100::1", "2001::1", "2002::1", "2620:4f:8000::1",
-		"3fff::1", "5f00::1",
+		"3fff::1", "5f00::1", "fec0::1",
 	}
 	for _, raw := range addresses {
 		addr := netip.MustParseAddr(raw)
@@ -114,7 +117,10 @@ func TestMCPDialFallsBackAcrossValidatedAddresses(t *testing.T) {
 	second := netip.MustParseAddr("93.184.216.35")
 	lookup := func(context.Context, string) ([]netip.Addr, error) { return []netip.Addr{first, second}, nil }
 	var attempted []string
+	var attemptedMu sync.Mutex
 	dial := func(_ context.Context, _, address string) (net.Conn, error) {
+		attemptedMu.Lock()
+		defer attemptedMu.Unlock()
 		attempted = append(attempted, address)
 		if len(attempted) == 1 {
 			return nil, errors.New("first address unavailable")
@@ -136,6 +142,48 @@ func TestMCPDialFallsBackAcrossValidatedAddresses(t *testing.T) {
 	want := []string{first.String() + ":80", second.String() + ":80"}
 	if len(attempted) != 2 || attempted[0] != want[0] || attempted[1] != want[1] {
 		t.Fatalf("attempted = %v, want %v", attempted, want)
+	}
+}
+
+func TestMCPDialStaggersCandidatesWithoutReresolving(t *testing.T) {
+	t.Parallel()
+
+	addrs := []netip.Addr{
+		netip.MustParseAddr("93.184.216.34"),
+		netip.MustParseAddr("93.184.216.35"),
+	}
+	var lookups atomic.Int32
+	lookup := func(context.Context, string) ([]netip.Addr, error) {
+		lookups.Add(1)
+		return addrs, nil
+	}
+	dial := func(ctx context.Context, _, address string) (net.Conn, error) {
+		if address == addrs[0].String()+":80" {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		client, server := net.Pipe()
+		server.Close()
+		return client, nil
+	}
+	client, err := newMCPHTTPClientWithNetworkDelay(
+		context.Background(), "http://mcp.example/mcp", false, lookup, dial, 5*time.Millisecond,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookups.Store(0) // Ignore the constructor's pre-connect validation lookup.
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	transport := client.Transport.(*http.Transport)
+	conn, err := transport.DialContext(ctx, "tcp", "mcp.example:80")
+	if err != nil {
+		t.Fatalf("staggered dial failed: %v", err)
+	}
+	conn.Close()
+	if got := lookups.Load(); got != 1 {
+		t.Fatalf("dial performed %d DNS lookups, want one validated snapshot", got)
 	}
 }
 
