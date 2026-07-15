@@ -246,6 +246,31 @@ func TestParseCallMixedArgsAndKwargs(t *testing.T) {
 	assert.Contains(t, call.Kwargs, "offset")
 }
 
+func TestMalformedCollectionExpressionsDoNotRetainNilNodes(t *testing.T) {
+	tests := []string{
+		`[1, +]`,
+		`{a: +}`,
+		`{1, +}`,
+		`call(1, +)`,
+		`call(value: +)`,
+		`emit(1, +)`,
+		`emit(value: +)`,
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			p := New(lexer.New(input))
+			program := p.ParseProgram()
+
+			require.NotEmpty(t, p.Errors())
+			assert.NotPanics(t, func() { _ = program.String() })
+			assert.NotPanics(t, func() {
+				require.NoError(t, ast.Walk(&ast.BaseVisitor{}, program))
+			})
+		})
+	}
+}
+
 func TestParseMemberExpression(t *testing.T) {
 	input := `foo.bar.baz`
 	program := parseProgram(t, input)
