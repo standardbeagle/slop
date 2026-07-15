@@ -2,11 +2,18 @@ package evaluator
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/standardbeagle/slop/internal/lexer"
 	"github.com/standardbeagle/slop/internal/parser"
 )
+
+type checkpointContractService struct{}
+
+func (*checkpointContractService) Call(string, []Value, map[string]Value) (Value, error) {
+	return NONE, nil
+}
 
 func TestDeserializeValue_Primitives(t *testing.T) {
 	d := NewDeserializer(nil, nil, nil)
@@ -632,6 +639,74 @@ func TestRoundTrip_Primitives(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckpointValueContract(t *testing.T) {
+	service := &checkpointContractService{}
+	services := map[string]Service{"api": service}
+
+	t.Run("service restores by registered name", func(t *testing.T) {
+		sv, err := NewSerializer(nil).SerializeValue(&ServiceValue{Name: "api", Service: service})
+		if err != nil {
+			t.Fatalf("SerializeValue() error = %v", err)
+		}
+
+		value, err := NewDeserializer(nil, nil, services).DeserializeValue(sv)
+		if err != nil {
+			t.Fatalf("DeserializeValue() error = %v", err)
+		}
+		got := value.(*ServiceValue)
+		if got.Name != "api" || got.Service != service {
+			t.Fatalf("restored service = %#v, want registered api service", got)
+		}
+	})
+
+	t.Run("service fails when unavailable", func(t *testing.T) {
+		sv, err := NewSerializer(nil).SerializeValue(&ServiceValue{Name: "api", Service: service})
+		if err != nil {
+			t.Fatalf("SerializeValue() error = %v", err)
+		}
+
+		_, err = NewDeserializer(nil, nil, nil).DeserializeValue(sv)
+		if err == nil || !strings.Contains(err.Error(), `checkpoint service "api" is unavailable`) {
+			t.Fatalf("DeserializeValue() error = %v, want unavailable service error", err)
+		}
+	})
+
+	t.Run("bound method restores by service reference", func(t *testing.T) {
+		sv, err := NewSerializer(nil).SerializeValue(&BoundMethodValue{
+			ServiceName: "api",
+			Service:     service,
+			Method:      "fetch",
+		})
+		if err != nil {
+			t.Fatalf("SerializeValue() error = %v", err)
+		}
+
+		value, err := NewDeserializer(nil, nil, services).DeserializeValue(sv)
+		if err != nil {
+			t.Fatalf("DeserializeValue() error = %v", err)
+		}
+		got := value.(*BoundMethodValue)
+		if got.ServiceName != "api" || got.Method != "fetch" || got.Service != service {
+			t.Fatalf("restored bound method = %#v", got)
+		}
+	})
+
+	t.Run("bound method fails when service unavailable", func(t *testing.T) {
+		sv := &SerializedValue{Type: "bound_method", Data: json.RawMessage(`{"service":"api","method":"fetch"}`)}
+		_, err := NewDeserializer(nil, nil, nil).DeserializeValue(sv)
+		if err == nil || !strings.Contains(err.Error(), `checkpoint service "api" is unavailable`) {
+			t.Fatalf("DeserializeValue() error = %v, want unavailable service error", err)
+		}
+	})
+
+	t.Run("module fails explicitly", func(t *testing.T) {
+		_, err := NewSerializer(nil).SerializeValue(&ModuleValue{Name: "utils", Scope: NewScope()})
+		if err == nil || !strings.Contains(err.Error(), `checkpoint does not support module "utils"`) {
+			t.Fatalf("SerializeValue() error = %v, want unsupported module error", err)
+		}
+	})
 }
 
 func TestRoundTrip_List(t *testing.T) {
