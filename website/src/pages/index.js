@@ -15,8 +15,9 @@ function HomepageHeader() {
         <h1 className="hero__title">{siteConfig.title}</h1>
         <p className="hero__subtitle">{siteConfig.tagline}</p>
         <p className={styles.heroDescription}>
-          A simple, safe, and powerful scripting language designed for AI agent workflows,
-          LLM orchestration, and prompt engineering.
+          A sandboxed execution environment for LLM-generated code.
+          Scripts pause mid-run; the code, call stack, and memory are saved
+          as editable JSON — fix anything, then resume with no work lost.
         </p>
         <div className={styles.buttons}>
           <Link
@@ -32,10 +33,11 @@ function HomepageHeader() {
         </div>
         <div className={styles.codeExample}>
           <pre>
-            <code>{`# Simple AI agent in SLOP
-user_input = "Hello, world!"
-response = llm.call(user_input)
-emit response`}</code>
+            <code>{`# Chain MCP calls, pause, edit, resume
+repos = github.search(query: "mcp servers")
+pause("after_fetch")   # state saved as editable JSON
+result = llm.call(prompt: "Summarize: " + json_stringify(repos), schema: {summary: string})
+emit(result.summary)`}</code>
           </pre>
         </div>
       </div>

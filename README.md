@@ -2,13 +2,14 @@
 
 **S**tructured **L**anguage for **O**rchestrating **P**rompts
 
-A simple, safe, and powerful scripting language designed for AI agent workflows, LLM orchestration, and prompt engineering.
+A sandboxed execution environment for LLM-generated code. Scripts run under hard limits on iterations, LLM calls, API calls, duration, and cost — and any script can pause mid-run. When it does, the entire execution state (source code, call stack, variables, emitted output) is written to a plain JSON checkpoint. Edit the code, change a variable, fix a bad value, then resume from the exact pause point with no completed work lost.
 
 ```slop
-# Simple AI agent in SLOP
-user_input = "Hello, world!"
-response = llm.call(user_input)
-emit response
+# Chain MCP tool calls and shell commands, pause between stages
+repos = github.search(query: "mcp servers")
+pause("after_fetch")   # full execution state saved as editable JSON
+result = llm.call(prompt: "Summarize: " + json_stringify(repos), schema: {summary: string})
+emit(result.summary)
 ```
 
 [![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://dev.standardbeagle.com/slop/)
@@ -19,15 +20,38 @@ emit response
 
 ## 🚀 What is SLOP?
 
-SLOP is a domain-specific language that makes it easy to build AI agents and orchestrate language model workflows. Think of it as **Python meets AI** - simple syntax with powerful built-in features for working with LLMs.
+SLOP is a scripting language and runtime built for code that LLMs write and run. The runtime treats execution state as data: a paused script is a JSON file containing its source, its position, every variable in every scope, the call stack, and everything it has emitted so far. That makes failed runs recoverable — when a generated script breaks three MCP calls in, you patch the checkpoint and resume instead of starting over.
 
 ### Why SLOP?
 
-- **🎯 Simple** - Python-like syntax you can learn in 5 minutes
-- **🔒 Safe** - Built-in protections against infinite loops and resource exhaustion
-- **⚡ Fast** - Lightweight Go runtime with streaming support
-- **🔌 AI-Native** - Native LLM calls, MCP integration, and schema validation
+- **⏸️ Pausable** - `pause("name")` snapshots the whole runtime to JSON; `slop resume` continues from that exact point
+- **✏️ Editable** - Rewrite the code, change variables, or adjust the stack in the checkpoint file, then resume
+- **🔒 Sandboxed** - Hard limits on iterations, LLM calls, API calls, duration, cost, and call depth
+- **🔌 AI-Native** - Native LLM calls, MCP server integration, and schema validation
+- **🎯 Simple** - Python-like syntax an LLM (or a human) can write correctly on the first try
 - **📦 Modular** - Organize code into reusable agents and modules
+
+## ⏸️ Pause, Edit, Resume
+
+This is the core workflow. Run a script with checkpoints enabled:
+
+```bash
+slop run agent.slop --checkpoint-dir ./checkpoints
+```
+
+```text
+Script paused. Checkpoint saved to: ./checkpoints/20260801_160903.json
+Message: after_fetch
+Resume with: slop resume ./checkpoints/20260801_160903.json
+```
+
+The checkpoint is plain JSON — the script source, the pause position, every variable, the control-flow stack, and all emitted output. If the run had a bug (wrong tool argument, bad intermediate value, half-written generated code), open the file and fix it. To change the code, edit the `script` field and set `script_hash` to the SHA-256 of the new source. Then pick up where it left off:
+
+```bash
+slop resume ./checkpoints/20260801_160903.json
+```
+
+Execution continues from the pause point. Work completed before the pause is restored from the checkpoint, so an LLM can chain MCP calls and CLI commands across a long workflow and recover from any failure without redoing finished steps.
 
 ## 📖 Quick Start
 
@@ -40,7 +64,7 @@ cd slop
 go build -o slop ./cmd/slop
 
 # Run your first script
-echo 'emit "Hello, SLOP! 🚀"' > hello.slop
+echo 'emit("Hello, SLOP! 🚀")' > hello.slop
 ./slop run hello.slop
 ```
 
@@ -55,7 +79,7 @@ def greet(name):
 
 # Use it
 message = greet("World")
-emit message
+emit(message)
 ```
 
 Run it:
@@ -91,21 +115,18 @@ Quick links:
 Stream responses in real-time:
 
 ```slop
-emit "Processing step 1..."
-emit "Processing step 2..."
-emit "Done! ✅"
+emit("Processing step 1...")
+emit("Processing step 2...")
+emit("Done! ✅")
 ```
 
 ### Native LLM Integration
 
-Call language models directly:
+Call language models directly — output is validated against your schema:
 
 ```slop
-response = llm.call({
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "model": "claude-3-5-sonnet"
-})
-emit response
+result = llm.call(prompt: "What is the capital of France?", schema: {answer: string})
+emit(result.answer)
 ```
 
 ### External Service Integration
@@ -134,39 +155,34 @@ rt.RegisterExternalService("memory", &MemoryService{})
 ```slop
 # SLOP script
 data = memory.read(key: "my_key")
-emit data
+emit(data)
 ```
 
 ### Schema Validation
 
-Validate data automatically:
+LLM output is validated against the schema you pass to `llm.call`:
 
 ```slop
-schema = {
-    "type": "object",
-    "properties": {
-        "name": {"type": "string"},
-        "age": {"type": "integer", "minimum": 0}
-    },
-    "required": ["name"]
-}
-
-# Validation happens automatically
-validate(user_data, schema)
+user = llm.call(prompt: "Extract name and age from: Alice is 30", schema: {name: string, age: int})
+emit(user.name)   # "Alice"
+emit(user.age)    # 30
 ```
+
+Built-in validators cover common formats: `validate_json(s)`, `validate_email(s)`, `validate_url(s)`, `validate_uuid(s)`.
 
 ### Safety Built-in
 
-Automatic protections for production use:
+Loops run under explicit limits, and the CLI enforces global caps:
 
 ```slop
-# Loops are automatically limited
-for i in range(1000000):  # Safe - won't run forever
-    process(i)
+# Bounded loop - at most 100 iterations
+for item in items with limit(100):
+    process(item)
+```
 
-# Timeouts prevent hanging
-with timeout("30s"):
-    slow_operation()
+```bash
+# Hard caps on the whole run
+slop run script.slop --max-iterations 10000 --max-llm-calls 20
 ```
 
 ## 🏗️ Architecture

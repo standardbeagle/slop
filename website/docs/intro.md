@@ -1,46 +1,60 @@
 ---
 sidebar_position: 1
 title: Introduction
-description: SLOP is a Python-like scripting language for building AI agents, orchestrating LLM workflows, and streaming responses with built-in safety limits.
+description: SLOP is a sandboxed execution environment for LLM-generated code — scripts pause to editable JSON checkpoints and resume with no work lost.
 ---
 
 # Introduction to SLOP
 
-Welcome to **SLOP** (Structured Language for Orchestrating Prompts) - a domain-specific language designed to make AI agent development simple, safe, and powerful.
+**SLOP** (Structured Language for Orchestrating Prompts) is a sandboxed execution environment for LLM-generated code.
+
+Scripts run under hard limits on iterations, LLM calls, API calls, duration, and cost. Any script can pause mid-run — and when it does, the entire execution state is written to a plain JSON checkpoint: the source code, the pause position, every variable in every scope, the call stack, and all output emitted so far.
+
+That state is editable. When a generated script fails three MCP calls into a workflow, you open the checkpoint, fix the code or patch a bad value, and resume from the exact pause point. Completed work is restored from the checkpoint, so nothing already done has to run again.
+
+```bash
+slop run agent.slop --checkpoint-dir ./checkpoints
+# Script paused. Checkpoint saved to: ./checkpoints/20260801_160903.json
+
+# ... edit the checkpoint JSON to fix the problem ...
+
+slop resume ./checkpoints/20260801_160903.json
+# continues from the pause point
+```
 
 ## What is SLOP?
 
-SLOP is a Python-like scripting language optimized for:
+SLOP is a Python-like scripting language whose runtime treats execution state as data, optimized for:
 - 🤖 Building AI agents and chatbots
 - 🔄 Orchestrating LLM workflows
+- 🔌 Chaining MCP tool calls and external services
 - 🛠️ Prompt engineering and testing
 - 📊 Data processing for AI applications
 
 ## Why SLOP?
 
-### Simple Python-like Syntax
+### Pause, Edit, Resume
 
 ```slop
-# Define a simple agent
-def greet(name):
-    return "Hello, " + name + "! 👋"
-
-# Use it
-message = greet("World")
-emit(message)
+repos = github.search(query: "mcp servers")
+pause("after_fetch")   # full execution state saved as editable JSON
+result = llm.call(prompt: "Summarize: " + json_stringify(repos), schema: {summary: string})
+emit(result.summary)
 ```
 
-### Built-in Safety
+A `pause` writes the whole runtime — code, stack, memory, emitted output — to a checkpoint file. Edit any of it, then `slop resume` continues from that exact point.
+
+### Sandboxed by Default
 
 - ⏱️ Automatic timeout protection
 - 🔁 Loop iteration limits
-- 📏 Rate limiting support
+- 📏 LLM call, API call, cost, and call-depth limits
 - 🛡️ Schema validation
 
 ### Native AI Features
 
 - **LLM Integration**: Call language models with `llm.call()`
-- **MCP Support**: Use Model Context Protocol tools
+- **MCP Support**: Connect MCP servers and call their tools as services
 - **Streaming**: Real-time output with `emit` statements
 - **Modules**: Organize agents into reusable components
 
@@ -49,25 +63,20 @@ emit(message)
 Here's a complete AI assistant in SLOP:
 
 ```slop
-# Get user input
-user_msg = user_message
+# Process a question with an LLM
+user_msg = "What is SLOP?"
 
-# Process with LLM
-response = llm.call({
-    "messages": [
-        {"role": "user", "content": user_msg}
-    ],
-    "model": "claude-3-5-sonnet"
-})
+response = llm.call(prompt: user_msg, schema: {answer: string})
 
 # Stream the response
-emit(response)
+emit(response.answer)
 ```
 
 ## What Makes SLOP Different?
 
 | Feature | SLOP | Python | JavaScript |
 |---------|------|--------|-----------|
+| **Pausable, Editable Execution** | ✅ JSON checkpoints + resume | ❌ | ❌ |
 | **AI-First Design** | ✅ Native LLM calls | ❌ Requires libraries | ❌ Requires libraries |
 | **Safety Built-in** | ✅ Automatic limits | ⚠️ Manual | ⚠️ Manual |
 | **Streaming Support** | ✅ `emit` keyword | ❌ Complex | ❌ Complex |
@@ -80,7 +89,7 @@ emit(response)
   <a className="button button--primary button--lg" href="/docs/getting-started/installation">
     Install SLOP →
   </a>
-  <a className="button button--secondary button--lg" href="/docs/getting-started/quick-start">
+  <a className="button button--secondary button--lg" href="/docs/getting-started/first-script">
     Your First Script →
   </a>
   <a className="button button--outline button--lg" href="/docs/examples/chat-app">
