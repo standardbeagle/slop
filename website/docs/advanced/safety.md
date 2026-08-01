@@ -147,23 +147,32 @@ func AnalyzeBounds(ast *AST) ResourceBounds {
 
 ### 3.3 Pre-Execution Limits
 
-```python
-# Set limits on execution
-slop run script.slop \
-    --max-llm-calls 50 \
-    --max-api-calls 1000 \
-    --max-duration 5m \
-    --max-cost $10.00
+```bash
+# Set limits from the CLI (only these two flags exist today):
+slop run script.slop --max-iterations 1000 --max-llm-calls 50
 
-# Script analysis output
+# Script bounds analysis
 $ slop plan script.slop
-Bounds Analysis:
-  Max iterations: 1,000
-  Max LLM calls: 50
-  Max API calls: 200
-  Estimated duration: 30s - 2m
-  Estimated cost: $0.50 - $2.00
+Execution Plan: script.slop
+
+Resource Bounds:
+  Max iterations:  200
+  Max LLM calls:   0
+  Max API calls:   0
+
+Termination: Guaranteed (no recursion detected)
+
+Summary:
+  ✓ Script is valid and will terminate
+  ✓ Worst-case: 200 iterations, 0 LLM calls, 0 API calls
 ```
+
+`MaxAPICalls`, `MaxDuration`, and `MaxCost` are enforced internally
+(`internal/evaluator/context.go`) when set through the `pkg/slop.Config`
+Go API, but the `run` CLI command only exposes `--max-iterations`,
+`--max-llm-calls`, and `--checkpoint-dir` — there is no
+`--max-api-calls`/`--max-duration`/`--max-cost` flag, and `slop plan`
+does not estimate wall-clock duration or dollar cost.
 
 ---
 
@@ -171,31 +180,19 @@ Bounds Analysis:
 
 ### 4.1 Verification Checks
 
-```go
-func Verify(script *Script) []Issue {
-    issues := []Issue{}
-    
-    // Syntax
-    issues = append(issues, CheckSyntax(script)...)
-    
-    // Termination
-    issues = append(issues, CheckTermination(script)...)
-    
-    // Type safety
-    issues = append(issues, CheckTypes(script)...)
-    
-    // Bounds
-    issues = append(issues, CheckBounds(script)...)
-    
-    // Dependencies
-    issues = append(issues, CheckDependencies(script)...)
-    
-    // Security
-    issues = append(issues, CheckSecurity(script)...)
-    
-    return issues
-}
-```
+`slop check <file>` (`cmd/slop/main.go` → `internal/analyzer.Analyze`)
+runs, in order:
+
+1. Lex + parse — syntax errors abort the check.
+2. Termination analysis — no `while`, no direct or indirect recursion,
+   every `for` loop has a static bound.
+3. Bounds computation — `MaxIterations`/`MaxLLMCalls`/`MaxAPICalls`.
+
+There is no separate type-checking pass, dependency-graph check, or
+security check baked into `slop check` — the "type checking" in the next
+section is enforced by the LLM service's schema validation at call time,
+not by static analysis, and there is no `CheckSecurity` equivalent
+anywhere in the codebase.
 
 ### 4.2 Type Checking
 
@@ -206,12 +203,16 @@ result = llm.call(
     schema: {name: string, age: int}
 )
 
-# These are checked at parse time:
 print(result.name)      # OK: name exists in schema
 print(result.age + 1)   # OK: age is int
-print(result.email)     # Error: email not in schema
-print(result.age + "x") # Error: int + string
+print(result.email)     # No error — returns none, not in schema
+print(result.age + "x") # Runtime error: unsupported operation: int + string
 ```
+
+This is runtime behavior, not a parse-time check: SLOP has no static type
+checker, so accessing a field the schema didn't produce silently returns
+`none` rather than failing, and a bad operator combination (like `int +
+string`) only errors when that line actually executes.
 
 ### 4.3 Dependency Checking
 
@@ -232,62 +233,38 @@ result = processor.run(data)
 
 ### 5.1 Execution Limits
 
+The real type (`internal/evaluator/context.go`) is `ExecutionLimits`, held
+on the evaluator `Context` and checked as counters increment:
+
 ```go
-type RuntimeLimits struct {
-    MaxIterations   int64
-    MaxLLMCalls     int64
-    MaxAPICalls     int64
-    MaxDuration     time.Duration
-    MaxMemory       int64
-    MaxOutputSize   int64
-}
+type ExecutionLimits struct {
+    MaxIterations int64
+    MaxLLMCalls   int64
+    MaxAPICalls   int64
+    MaxDuration   int64   // seconds, not time.Duration
+    MaxCost       float64
+    MaxCallDepth  int64   // nested user function/lambda call depth
 
-func Execute(script *Script, limits RuntimeLimits) (Result, error) {
-    ctx := &Context{
-        limits:     limits,
-        iterations: 0,
-        llmCalls:   0,
-        apiCalls:   0,
-        startTime:  time.Now(),
-    }
-    
-    return execute(script, ctx)
-}
-
-func (ctx *Context) checkLimits() error {
-    if ctx.iterations > ctx.limits.MaxIterations {
-        return LimitExceeded("iterations")
-    }
-    if ctx.llmCalls > ctx.limits.MaxLLMCalls {
-        return LimitExceeded("LLM calls")
-    }
-    if time.Since(ctx.startTime) > ctx.limits.MaxDuration {
-        return LimitExceeded("duration")
-    }
-    return nil
+    // Counters, updated during execution
+    IterationCount int64
+    LLMCallCount   int64
+    APICallCount   int64
+    StartTime      int64
+    TotalCost      float64
+    CallDepth      int64
 }
 ```
+
+A limit of `0` means unlimited for that dimension — each check is
+`if Limits.MaxX > 0 && Limits.XCount > Limits.MaxX { return error }`.
 
 ### 5.2 Cost Tracking
 
-```go
-type CostTracker struct {
-    LLMCosts    map[string]float64  // model -> cost per 1k tokens
-    APICosts    map[string]float64  // service -> cost per call
-    MaxCost     float64
-    CurrentCost float64
-}
-
-func (t *CostTracker) RecordLLMCall(model string, tokens int) error {
-    cost := t.LLMCosts[model] * float64(tokens) / 1000
-    t.CurrentCost += cost
-    
-    if t.CurrentCost > t.MaxCost {
-        return CostLimitExceeded(t.CurrentCost, t.MaxCost)
-    }
-    return nil
-}
-```
+There is no separate cost-tracking type — `MaxCost` and `TotalCost` are
+plain fields on `ExecutionLimits` (5.1), checked the same way as the other
+limits: `if MaxCost > 0 && TotalCost > MaxCost { return error }`. Nothing
+in the codebase computes a per-model or per-service cost automatically;
+`TotalCost` only moves if the host application sets it explicitly.
 
 ### 5.3 Rate Limiting
 
@@ -295,11 +272,13 @@ func (t *CostTracker) RecordLLMCall(model string, tokens int) error {
 # Automatic rate limiting
 for item in items with rate(10/s):
     api.call(item)  # Automatically throttled to 10/s
-
-# Parallel with rate limit
-for item in items with parallel(5), rate(20/s):
-    api.call(item)  # 5 concurrent, 20/s total
 ```
+
+`parallel(n)` is parsed but not implemented yet
+(`internal/evaluator/evaluator.go` has a `// TODO: Implement parallel
+execution` where it should run the body concurrently) — loops with
+`parallel(n)` currently execute sequentially, with no concurrency and no
+combined rate limit.
 
 ---
 
@@ -307,58 +286,53 @@ for item in items with parallel(5), rate(20/s):
 
 ### 6.1 Operation Logging
 
-Every operation is recorded:
+Service calls are recorded on the evaluator `Context`
+(`internal/evaluator/context.go`):
 
 ```go
-type LogEntry struct {
-    Seq       int64
-    Timestamp time.Time
-    Type      string        // "llm_call", "api_call", "assignment", etc.
-    Location  Location      // Line/column in script
-    Input     any           // Arguments
-    Output    any           // Result
-    Duration  time.Duration
-    Cost      float64
+type Operation struct {
+    ID         int64
+    Timestamp  int64
+    Type       string  // "call", "write", "delete", "update", etc.
+    Service    string
+    Method     string
+    Args       []Value
+    Kwargs     map[string]Value
+    Result     Value
+    Error      error
+    Reversible bool
 }
 
 type TransactionLog struct {
-    ScriptHash string
-    StartTime  time.Time
-    Entries    []LogEntry
-    Status     string  // "running", "completed", "failed", "rolled_back"
+    Operations []Operation
+    // ...
 }
 ```
 
 ### 6.2 Checkpoints
 
-```python
-# Automatic checkpoints at loop iterations
-for item in items with limit(100), checkpoint:
-    result = expensive_operation(item)
-    # Checkpoint saved after each iteration
-    # Can resume from last checkpoint on failure
-
-# Manual checkpoints
-checkpoint("after_fetch", data)
-# ... more processing ...
-checkpoint("after_transform", transformed)
-```
+There is no `checkpoint` loop modifier and no callable `checkpoint()`
+function. Checkpointing is a CLI/host feature, not a script-level one: run
+with `--checkpoint-dir <dir>` and resume with `slop resume <checkpoint>` —
+see section 3.3 and the [Modules](/docs/language/modules) page.
 
 ### 6.3 Rollback
 
 ```python
-# Automatic rollback on failure
+# Automatic rollback: `stop with rollback` reverts every logged
+# Reversible operation via the transaction log
 try:
     for item in items:
-        api.update(item)  # All updates are logged
+        api.update(item)  # Logged, and reversible if the service supports it
 catch error:
-    rollback()  # Reverts all api.update calls
     emit(error: str(error))
-
-# Manual rollback
-if not validate(results):
-    rollback(to: "after_fetch")  # Rollback to checkpoint
+    stop with rollback
 ```
+
+There is no standalone `rollback()` function and no `rollback(to:
+"checkpoint")` — the only rollback trigger is the `stop with rollback`
+statement, which reverts the whole transaction log, not to a named
+checkpoint.
 
 ---
 
@@ -366,48 +340,42 @@ if not validate(results):
 
 ### 7.1 Sandboxing
 
-Scripts cannot:
-- Access filesystem (except through approved services)
-- Make network calls (except through MCP)
-- Execute system commands
-- Import arbitrary code
-- Access environment variables directly
+There is no sandbox enforcement layer, allow-list, or security policy
+engine in the codebase (no `CheckSecurity` function, no filesystem/network
+policy anywhere in `internal/`). What scripts can and cannot do is a
+side effect of which built-ins exist:
+
+- No filesystem or process-execution built-ins ship by default, so
+  scripts cannot touch the filesystem or run system commands unless a
+  host application registers a service that does.
+- `env_get(name)` is a real, registered built-in
+  (`internal/builtin/control.go`) that wraps `os.Getenv` directly —
+  scripts **can** read any environment variable by name. `env_mode()` and
+  `env_debug()` also read `SLOP_ENV`/`ENV`/`SLOP_DEBUG` directly.
+- Network access is only possible through services a host registers
+  (`RegisterService`) — nothing built-in makes an HTTP call.
+- There is no dynamic `import`/`eval`/`exec`, so scripts cannot load or
+  run arbitrary code.
+
+Treat this as "a small, fixed built-in surface with no network/filesystem
+access by default," not as an enforced security sandbox.
 
 ### 7.2 Input Validation
 
-```python
-# Input schema validation
-===INPUT===
-schema: {
-    query: string,
-    limit: int(min: 1, max: 1000),
-    options: {
-        include_draft: bool
-    }?  # Optional
-}
-===MAIN===
-# input.query guaranteed to be string
-# input.limit guaranteed to be 1-1000
-# input.options may be none
-```
+`===INPUT===` and `===OUTPUT===` blocks are not implemented. The lexer
+recognizes the `INPUT`/`OUTPUT` header tokens
+(`internal/lexer/lexer.go`), but the module parser's `parseModule()`
+(`internal/parser/parser.go`) only handles `SOURCE`, `USE`, and `MAIN` —
+a script starting with `===INPUT===` fails to parse. `input` is available
+as a plain global inside a script; it is whatever value the host
+application sets, with no schema enforced on it.
 
 ### 7.3 Output Validation
 
-```python
-# Output schema validation
-===OUTPUT===
-schema: {
-    results: list({
-        id: string,
-        score: float
-    }),
-    total: int
-}
-===MAIN===
-# ... processing ...
-emit(results: results, total: len(results))
-# Validated against schema before output
-```
+There is no output-schema block either, and no built-in step validates an
+`emit()` call's shape before it leaves the script — see the LLM call's
+`schema` option (section 3) for the schema validation that does exist,
+which only applies to `llm.call()` results.
 
 ### 7.4 LLM Output Sanitization
 
@@ -427,43 +395,28 @@ result = llm.call(
 ## 8. Verification CLI
 
 ```bash
-# Full verification
+# Verification
 $ slop check script.slop
-✓ Syntax valid
-✓ Termination guaranteed
-✓ Types consistent
-✓ Dependencies resolved
-✓ Bounds: max 500 iterations, 50 LLM calls, 200 API calls
-✓ No security issues
+✓ script.slop: valid
+  Max iterations: 200
 
 # Resource analysis
 $ slop plan script.slop
-Execution Plan:
-  1. fetch contacts (1 API call)
-  2. for each contact (max 100):
-     a. enrich via clearbit (1 API call)
-     b. enrich via linkedin (1 API call)
-     c. classify via LLM (1 LLM call)
-  3. emit results
+Execution Plan: script.slop
 
 Resource Bounds:
-  Iterations: 100
-  LLM calls: 100
-  API calls: 201 (1 + 100 + 100)
-  
-Estimated:
-  Duration: 1-5 minutes
-  Cost: $1.00 - $5.00
+  Max iterations:  200
+  Max LLM calls:   0
+  Max API calls:   0
 
-# Dry run (no external calls)
-$ slop run --dry script.slop
-[DRY] Would call: salesforce.query("SELECT * FROM Contact")
-[DRY] Would iterate: 100 items (limit)
-[DRY] Would call: clearbit.lookup(...)
-[DRY] Would call: linkedin.find(...)
-[DRY] Would call: llm.call(...)
-[DRY] Would emit: {results: [...], count: 100}
+Termination: Guaranteed (no recursion detected)
+
+Summary:
+  ✓ Script is valid and will terminate
+  ✓ Worst-case: 200 iterations, 0 LLM calls, 0 API calls
 ```
+
+There is no `slop run --dry` dry-run mode.
 
 ---
 
@@ -477,7 +430,7 @@ $ slop run --dry script.slop
 | Cost estimate | Impossible | Impossible | **Calculated** |
 | Rollback | Manual | Manual | **Built-in** |
 | Type safety | Runtime | Runtime | **Pre-execution** |
-| Sandbox | None | Partial | **Complete** |
+| Sandbox | None | Partial | **No enforced sandbox — small built-in surface, no net/fs by default** |
 
 ---
 
