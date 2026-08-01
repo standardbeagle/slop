@@ -386,7 +386,7 @@ emit(
 
 ### 3.2 Extract Function
 
-```python
+````python
 # Extract selected lines into a new function
 file_path = input.file
 start_line = input.start_line
@@ -460,7 +460,7 @@ emit(
     parameters: analysis.parameters,
     returns: analysis.returns
 )
-```
+````
 
 ### 3.3 Bulk Rename
 
@@ -619,7 +619,7 @@ emit({
 
 ### 4.2 Code Review Agent
 
-```python
+````python
 # Review a pull request
 repo = input.repo
 pr_number = input.pr_number
@@ -722,7 +722,7 @@ emit({
     },
     reviews: reviews
 })
-```
+````
 
 ### 4.3 Data Entry Agent
 

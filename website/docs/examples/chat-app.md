@@ -43,32 +43,32 @@ A full-stack AI chat application built with:
 
 ### 1. Start the Backend
 
-\`\`\`bash
+```bash
 cd backend
 go mod init slop-chat-backend
 go mod tidy
 go run main.go
-\`\`\`
+```
 
-The backend will start on \`http://localhost:8080\`
+The backend will start on `http://localhost:8080`
 
 ### 2. Start the Frontend
 
-\`\`\`bash
+```bash
 cd frontend
 pnpm install
 pnpm dev
-\`\`\`
+```
 
-The frontend will start on \`http://localhost:3000\`
+The frontend will start on `http://localhost:3000`
 
 ### 3. Open Your Browser
 
-Navigate to \`http://localhost:3000\` and start chatting!
+Navigate to `http://localhost:3000` and start chatting!
 
 ## Project Structure
 
-\`\`\`
+```
 chat-app/
 ├── backend/
 │   └── main.go                 # Go server with SLOP integration
@@ -87,13 +87,13 @@ chat-app/
 │   ├── code-helper.slop       # Programming help
 │   └── math-helper.slop       # Math operations
 └── README.md
-\`\`\`
+```
 
 ## Creating Custom Agents
 
-Create a new \`.slop\` file in the \`slop-agents/\` directory:
+Create a new `.slop` file in the `slop-agents/` directory:
 
-\`\`\`slop
+```slop
 # my-agent.slop - Description of your agent
 
 # Access user input
@@ -108,48 +108,48 @@ emit response
 
 # Or return a final value
 response
-\`\`\`
+```
 
 **Key Variables:**
-- \`user_message\`: The latest user message (string)
-- \`messages\`: Full conversation history (JSON string)
+- `user_message`: The latest user message (string)
+- `messages`: Full conversation history (JSON string)
 
-**Streaming with \`emit\`:**
-\`\`\`slop
+**Streaming with `emit`:**
+```slop
 emit "First chunk\n"
 emit "Second chunk\n"
 emit "Final chunk"
-\`\`\`
+```
 
 ## API Endpoints
 
-### POST \`/api/chat\`
+### POST `/api/chat`
 
 Chat with an agent (streaming)
 
 **Request:**
-\`\`\`json
+```json
 {
   "messages": [
     {"role": "user", "content": "Hello!"}
   ],
   "agentId": "assistant"
 }
-\`\`\`
+```
 
 **Response:** Server-Sent Events (SSE) stream
-\`\`\`
+```
 data: {"content":"Hello! 👋","done":false}
 data: {"content":" How can I help?","done":false}
 data: {"content":"","done":true}
-\`\`\`
+```
 
-### GET \`/api/agents\`
+### GET `/api/agents`
 
 List available agents
 
 **Response:**
-\`\`\`json
+```json
 [
   {
     "id": "assistant",
@@ -157,20 +157,20 @@ List available agents
     "description": "General AI Assistant"
   }
 ]
-\`\`\`
+```
 
 ## How It Works
 
 ### Frontend (Vercel AI SDK)
 
-The \`useChat\` hook from \`ai/react\` handles message state, streaming, and input.
+The `useChat` hook from `ai/react` handles message state, streaming, and input.
 
 ### Backend (Go + SLOP)
 
 1. **Parse Request**: Extract messages and agent ID
-2. **Load SLOP Script**: Read the appropriate \`.slop\` file
+2. **Load SLOP Script**: Read the appropriate `.slop` file
 3. **Execute**: Run the SLOP script with user context
-4. **Stream**: Send \`emit\` statements as SSE chunks
+4. **Stream**: Send `emit` statements as SSE chunks
 5. **Complete**: Send final result when done
 
 ## License
