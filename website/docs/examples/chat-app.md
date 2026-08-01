@@ -47,10 +47,12 @@ A full-stack AI chat application built with:
 
 ```bash
 cd backend
-go mod init slop-chat-backend
 go mod tidy
 go run main.go
 ```
+
+Or use the included launcher to start both backend and frontend together:
+`./start.sh` from the `chat-app/` root.
 
 The backend will start on `http://localhost:8080`
 
@@ -87,7 +89,11 @@ chat-app/
 ├── slop-agents/
 │   ├── assistant.slop         # General assistant
 │   ├── code-helper.slop       # Programming help
-│   └── math-helper.slop       # Math operations
+│   ├── data-helper.slop       # Data analysis
+│   ├── math-helper.slop       # Math operations
+│   ├── query-builder.slop     # Query construction
+│   ├── task-helper.slop       # Task planning
+│   └── weather-agent.slop     # Weather lookups
 └── README.md
 ```
 
@@ -105,8 +111,8 @@ user_msg = user_message
 response = "You said: " + user_msg
 
 # Stream response chunks with emit
-emit "Processing your request...\n\n"
-emit response
+emit("Processing your request...\n\n")
+emit(response)
 
 # Or return a final value
 response
@@ -118,9 +124,9 @@ response
 
 **Streaming with `emit`:**
 ```slop
-emit "First chunk\n"
-emit "Second chunk\n"
-emit "Final chunk"
+emit("First chunk\n")
+emit("Second chunk\n")
+emit("Final chunk")
 ```
 
 ## API Endpoints
