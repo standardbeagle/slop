@@ -25,7 +25,7 @@ def greet(name):
 
 # Use it
 message = greet("World")
-emit message
+emit(message)
 ```
 
 ### Built-in Safety
@@ -59,7 +59,7 @@ response = llm.call({
 })
 
 # Stream the response
-emit response
+emit(response)
 ```
 
 ## What Makes SLOP Different?
@@ -78,7 +78,7 @@ emit response
   <a className="button button--primary button--lg" href="/docs/getting-started/installation">
     Install SLOP →
   </a>
-  <a className="button button--secondary button--lg" href="/docs/getting-started/first-script">
+  <a className="button button--secondary button--lg" href="/docs/getting-started/quick-start">
     Your First Script →
   </a>
   <a className="button button--outline button--lg" href="/docs/examples/chat-app">

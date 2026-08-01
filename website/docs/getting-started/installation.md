@@ -8,7 +8,7 @@ Get SLOP up and running in minutes!
 
 ## Prerequisites
 
-- **Go 1.21+** - [Download Go](https://go.dev/dl/)
+- **Go 1.23+** - [Download Go](https://go.dev/dl/)
 - **Git** (optional, for cloning)
 
 ## Install from Source
@@ -35,7 +35,7 @@ go build -o slop ./cmd/slop
 
 You should see output like:
 ```
-SLOP v0.1.0
+slop version 0.1.0
 ```
 
 ## Add to PATH (Optional)
@@ -57,7 +57,7 @@ Create a test file `hello.slop`:
 ```slop
 # hello.slop
 message = "Hello, SLOP! 🚀"
-emit message
+emit(message)
 ```
 
 Run it:

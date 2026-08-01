@@ -15,7 +15,7 @@ Create a file called `hello.slop`:
 name = "World"
 greeting = "Hello, " + name + "!"
 
-emit greeting
+emit(greeting)
 ```
 
 Run it:
@@ -52,12 +52,8 @@ result = none
 # Lists
 fruits = ["apple", "banana", "orange"]
 
-# Maps (dictionaries)
-person = {
-    "name": "Bob",
-    "age": 30,
-    "city": "NYC"
-}
+# Maps (dictionaries) — must stay on one line
+person = {"name": "Bob", "age": 30, "city": "NYC"}
 ```
 
 ## Control Flow
@@ -68,9 +64,9 @@ person = {
 age = 20
 
 if age >= 18:
-    emit "You can vote! ✅"
+    emit("You can vote! ✅")
 else:
-    emit "Too young to vote ❌"
+    emit("Too young to vote ❌")
 ```
 
 ### For Loops
@@ -80,15 +76,15 @@ else:
 fruits = ["🍎", "🍌", "🍊"]
 
 for fruit in fruits:
-    emit fruit
+    emit(fruit)
 
 # Iterate with index
 for i, fruit in fruits:
-    emit str(i) + ": " + fruit
+    emit(str(i) + ": " + fruit)
 
 # Range
 for i in range(5):
-    emit "Count: " + str(i)
+    emit("Count: " + str(i))
 ```
 
 ## Functions
@@ -106,8 +102,8 @@ def add(a, b):
 message = greet("Alice")
 sum = add(10, 20)
 
-emit message
-emit "Sum: " + str(sum)
+emit(message)
+emit("Sum: " + str(sum))
 ```
 
 ## Streaming with emit
@@ -115,10 +111,10 @@ emit "Sum: " + str(sum)
 The `emit` statement sends output in real-time:
 
 ```slop
-emit "Processing..."
-emit "Step 1 complete ✓"
-emit "Step 2 complete ✓"
-emit "Done! 🎉"
+emit("Processing...")
+emit("Step 1 complete ✓")
+emit("Step 2 complete ✓")
+emit("Done! 🎉")
 ```
 
 This is perfect for streaming AI responses!
@@ -153,9 +149,9 @@ Handle errors gracefully:
 ```slop
 try:
     result = risky_operation()
-    emit "Success: " + str(result)
+    emit("Success: " + str(result))
 catch error:
-    emit "Error occurred: " + error
+    emit("Error occurred: " + error)
 ```
 
 ## Next Steps
