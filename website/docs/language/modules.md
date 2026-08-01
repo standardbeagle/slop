@@ -334,13 +334,12 @@ def process(item):
 ```
 
 ```python
-# index.slop (re-exports)
+# index.slop
 ===USE: ./sources/utils===
 ===USE: ./sources/processor===
 
-===EXPORT===
-utils: utils
-processor: processor
+===MAIN===
+processor.process(item)
 ```
 
 ### 6.3 Using External Libraries
@@ -354,55 +353,9 @@ mylib.processor.process(data)
 
 ---
 
-## 7. Bundling
+## 7. Versioning
 
-### 7.1 Fat Bundle (Inline Dependencies)
-
-For maximum portability, inline everything:
-
-```python
-===SOURCE: processor===
-id: "mycompany/processor@v1"
-uses: {}  # Now self-contained!
-bundles:
-  utils:
-    from: "mycompany/utils@v1"
-    code: |
-      def clean(s):
-          return s.strip().lower()
----
-def process(item):
-    return utils.clean(item.name)
-```
-
-### 7.2 Bundle Command
-
-```bash
-# Create fat bundle
-$ slop bundle processor.slop --include-deps -o processor.bundled.slop
-
-# Unbundle to separate files
-$ slop unbundle processor.bundled.slop -o ./sources/
-```
-
-### 7.3 Dependency Tree
-
-```bash
-$ slop deps processor.slop
-processor@v1
-├── utils@v1 (self-contained)
-├── validator@v1
-│   └── utils@v1 (shared)
-└── formatter@v1 (self-contained)
-
-Total: 4 sources, 2 unique dependencies
-```
-
----
-
-## 8. Versioning
-
-### 8.1 Semantic Versions
+### 7.1 Semantic Versions
 
 ```python
 ===SOURCE: processor===
@@ -415,7 +368,7 @@ uses: {
 ---
 ```
 
-### 8.2 Version Resolution
+### 7.2 Version Resolution
 
 ```python
 ===USE: lib/processor@v2===   # Uses latest v2.x.x
@@ -423,7 +376,7 @@ uses: {
 ===USE: lib/processor@v2.1.3=== # Exact version
 ```
 
-### 8.3 Version Conflicts
+### 7.3 Version Conflicts
 
 ```python
 ===USE: lib/a===  # Requires utils@v1
@@ -441,9 +394,9 @@ uses: {
 
 ---
 
-## 9. Validation
+## 8. Validation
 
-### 9.1 Dependency Check
+### 8.1 Dependency Check
 
 ```go
 func ValidateDependencies(script *Script) []Error {
@@ -489,23 +442,22 @@ func ValidateDependencies(script *Script) []Error {
 }
 ```
 
-### 9.2 CLI Check
+### 8.2 CLI Check
 
 ```bash
 $ slop check script.slop
 
-Dependencies:
-  ✓ processor@v1 → utils@v1 (resolved)
-  ✓ processor@v1 → validator@v1 (resolved)
-  ✓ validator@v1 → utils@v1 (resolved, shared)
-  ✓ No circular dependencies
-  ✓ No missing dependencies
-  ✓ No version conflicts
+✓ script.slop: valid
+  Max iterations: <n>   # only shown if the script sets limit(n)
+  Max LLM calls: <n>    # only shown if the script bounds LLM calls
 ```
+
+`slop check` reports parse/analysis errors and the script's resource
+bounds; it does not print a per-dependency resolution tree.
 
 ---
 
-## 10. Summary
+## 9. Summary
 
 | Scenario | What To Do |
 |----------|------------|
