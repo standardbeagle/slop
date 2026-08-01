@@ -1,12 +1,25 @@
 ---
 sidebar_position: 2
 title: Example: Code Snippets
-description: Runnable SLOP snippets covering strings, collections, control flow, and built-in functions.
+description: SLOP code patterns for data pipelines, procedural generation, code editing, and multi-service agent workflows.
 ---
 
 # SLOP Examples
 
 ## Comprehensive Examples by Use Case
+
+Most of the service calls below (`salesforce.*`, `clearbit.*`,
+`web.*`, `filesystem.*`, `db.*`, `github.*`, `hubspot.*`, `airtable.*`,
+`csv.*`, `markdown.*`, `parser.*`, ...) are illustrative — they are not
+built into SLOP. Only `llm` is registered by default; any other service
+requires a host application to register it
+(`Runtime.RegisterService`, see [Built-in Functions](/docs/builtins/overview)
+section 4 and [Building AI Agents](/docs/advanced/agents)). Built-in
+free functions use flat underscore names (`random_int`, `gen_name`,
+`store_get`, ...), not the dotted form some snippets below still show for
+readability — see [Built-in Functions](/docs/builtins/overview) for the
+real names. Map and list literals must stay on a single line; multi-line
+`{...}`/`[...]` literals don't parse.
 
 ---
 
@@ -14,7 +27,7 @@ description: Runnable SLOP snippets covering strings, collections, control flow,
 
 ### 1.1 Simple Data Pipeline
 
-```python
+```slop
 # Enrich and sync contacts
 contacts = salesforce.query("SELECT Id, Email, Name FROM Contact LIMIT 100")
 
@@ -35,7 +48,7 @@ emit(processed: len(contacts))
 
 ### 1.2 Web Research
 
-```python
+```slop
 # Research a topic and summarize
 topic = input.topic
 
@@ -54,7 +67,7 @@ for result in results with rate(5/s):
         content = web.fetch(result.url)
         documents.append({url: result.url, content: content.text[:5000]})
     catch error:
-        log.warn("Failed to fetch {result.url}")
+        log_warn("Failed to fetch {result.url}")
 
 # Summarize
 summary = llm.call(
@@ -71,7 +84,7 @@ emit(summary)
 
 ### 1.3 Data Transformation
 
-```python
+```slop
 # Transform and validate data
 raw_data = input.data
 
@@ -119,15 +132,25 @@ emit(
 
 ## 2. World Building
 
+Most of the `gen.*` calls in this section — `region_name`, `climate`,
+`location_name`, `npc_name`, `inventory`, `dialogue_hooks`, `quest_name`,
+`reward`, `quest_description` — are conceptual and have no implementation
+at all, under any name. The generators that do exist are `gen_name`,
+`gen_first_name`, `gen_last_name`, `gen_email`, `gen_phone`, `gen_word`,
+`gen_words`, `gen_sentence`, `gen_paragraph`, `gen_lorem`, `gen_color`,
+`gen_rgb` (see [Built-in Functions](/docs/builtins/overview) section 5).
+Treat this section as a design sketch for a procedural-generation host
+integration, not working code.
+
 ### 2.1 Game World Generation
 
-```python
+```slop
 # Generate a game world with regions, locations, and NPCs
 seed = input.seed or 12345
 world_name = input.name or "Eldoria"
 
 # Initialize RNG
-random.seed(seed)
+random_seed(seed)
 
 # Create regions
 regions = []
@@ -136,7 +159,7 @@ for region_type in ["forest", "mountain", "plains", "coast", "desert"]:
         id: uuid(),
         name: gen.region_name(region_type),
         type: region_type,
-        danger_level: random.range(1, 10),
+        danger_level: random_int(1, 10),
         climate: gen.climate(region_type),
         locations: []
     }
@@ -144,17 +167,17 @@ for region_type in ["forest", "mountain", "plains", "coast", "desert"]:
 
 # Create locations in each region
 for region in regions:
-    location_count = random.range(3, 7)
+    location_count = random_int(3, 7)
     
     for i in range(location_count):
-        loc_type = random.choice(["town", "dungeon", "landmark", "camp"])
+        loc_type = random_choice(["town", "dungeon", "landmark", "camp"])
         
         location = {
             id: uuid(),
             name: gen.location_name(loc_type, region.type),
             type: loc_type,
             region_id: region.id,
-            danger: region.danger_level + random.range(-2, 2) | clamp(1, 10),
+            danger: region.danger_level + random_int(-2, 2) | clamp(1, 10),
             npcs: [],
             items: [],
             connections: []
@@ -166,10 +189,10 @@ all_locations = regions | flat_map(r -> r.locations)
 towns = all_locations | filter(l -> l.type == "town")
 
 for town in towns:
-    pop_size = random.range(5, 15)
+    pop_size = random_int(5, 15)
     
     for i in range(pop_size):
-        occupation = random.weighted({
+        occupation = random_weighted({
             farmer: 0.3,
             merchant: 0.2,
             guard: 0.15,
@@ -185,7 +208,7 @@ for town in towns:
             name: gen.npc_name(),
             occupation: occupation,
             location_id: town.id,
-            disposition: random.choice(["friendly", "neutral", "suspicious"]),
+            disposition: random_choice(["friendly", "neutral", "suspicious"]),
             inventory: gen.inventory(occupation),
             dialogue: gen.dialogue_hooks(occupation)
         }
@@ -196,7 +219,7 @@ for region in regions:
     locs = region.locations
     for i, loc in enumerate(locs):
         # Connect to 1-3 other locations in region
-        others = locs | filter(l -> l.id != loc.id) | shuffle() | take(random.range(1, 3))
+        others = locs | filter(l -> l.id != loc.id) | shuffle() | take(random_int(1, 3))
         for other in others:
             if other.id not in loc.connections:
                 loc.connections.append(other.id)
@@ -205,22 +228,22 @@ for region in regions:
 # Generate quests
 quests = []
 for region in regions:
-    quest_count = random.range(2, 5)
+    quest_count = random_int(2, 5)
     
     for i in range(quest_count):
         towns_in_region = region.locations | filter(l -> l.type == "town")
         dungeons_in_region = region.locations | filter(l -> l.type == "dungeon")
         
         if len(towns_in_region) > 0 and len(dungeons_in_region) > 0:
-            giver_loc = random.choice(towns_in_region)
-            target_loc = random.choice(dungeons_in_region)
-            giver_npc = random.choice(giver_loc.npcs) if giver_loc.npcs else none
+            giver_loc = random_choice(towns_in_region)
+            target_loc = random_choice(dungeons_in_region)
+            giver_npc = random_choice(giver_loc.npcs) if giver_loc.npcs else none
             
             if giver_npc:
                 quest = {
                     id: uuid(),
                     name: gen.quest_name(),
-                    type: random.choice(["fetch", "kill", "escort", "discover"]),
+                    type: random_choice(["fetch", "kill", "escort", "discover"]),
                     giver_id: giver_npc.id,
                     target_location_id: target_loc.id,
                     reward: gen.reward(region.danger_level),
@@ -244,7 +267,7 @@ emit({
 
 ### 2.2 Procedural Dungeon
 
-```python
+```slop
 # Generate a dungeon with rooms, enemies, and loot
 dungeon_name = input.name
 depth = input.depth or 5
@@ -258,7 +281,7 @@ for floor_num in range(1, depth + 1):
     
     rooms = []
     for i in range(room_count):
-        room_type = random.weighted({
+        room_type = random_weighted({
             combat: 0.4,
             treasure: 0.2,
             puzzle: 0.15,
@@ -279,15 +302,15 @@ for floor_num in range(1, depth + 1):
         # Add room contents based on type
         match room_type:
             combat -> 
-                enemy_count = random.range(1, 3 + floor_num)
+                enemy_count = random_int(1, 3 + floor_num)
                 room.contents.enemies = [
                     gen.enemy(floor_difficulty) for i in range(enemy_count)
                 ]
             
             treasure ->
                 room.contents.chest = {
-                    locked: random.chance(0.3),
-                    loot: gen.loot(floor_difficulty, random.range(1, 4))
+                    locked: random_chance(0.3),
+                    loot: gen.loot(floor_difficulty, random_int(1, 4))
                 }
             
             puzzle ->
@@ -302,7 +325,7 @@ for floor_num in range(1, depth + 1):
             
             rest ->
                 room.contents.campfire = true
-                room.contents.merchant = random.chance(0.3)
+                room.contents.merchant = random_chance(0.3)
         
         rooms.append(room)
     
@@ -310,13 +333,13 @@ for floor_num in range(1, depth + 1):
     for i, room in enumerate(rooms):
         if i > 0:
             # Connect to at least one previous room
-            prev = random.choice(rooms[:i])
+            prev = random_choice(rooms[:i])
             room.connections.append(prev.id)
             prev.connections.append(room.id)
         
         # Maybe connect to another room
-        if random.chance(0.3) and i > 1:
-            other = random.choice([r for r in rooms[:i] if r.id not in room.connections])
+        if random_chance(0.3) and i > 1:
+            other = random_choice([r for r in rooms[:i] if r.id not in room.connections])
             if other:
                 room.connections.append(other.id)
                 other.connections.append(room.id)
@@ -348,7 +371,7 @@ emit({
 
 ### 3.1 Add Logging to Functions
 
-```python
+```slop
 # Add logging to all public functions in a Go file
 file_path = input.file
 
@@ -388,7 +411,7 @@ emit(
 
 ### 3.2 Extract Function
 
-````python
+```slop
 # Extract selected lines into a new function
 file_path = input.file
 start_line = input.start_line
@@ -462,11 +485,11 @@ emit(
     parameters: analysis.parameters,
     returns: analysis.returns
 )
-````
+```
 
 ### 3.3 Bulk Rename
 
-```python
+```slop
 # Rename a symbol across multiple files
 old_name = input.old_name
 new_name = input.new_name
@@ -520,7 +543,7 @@ if input.confirm:
 
 ### 4.1 Research Assistant
 
-```python
+```slop
 # Research a topic and produce a report
 query = input.query
 depth = input.depth or "standard"  # quick, standard, deep
@@ -581,7 +604,7 @@ for result in all_results with rate(5/s):
                 quotes: extraction.quotes
             })
     catch error:
-        log.warn("Failed to process {result.url}: {error}")
+        log_warn("Failed to process {result.url}: {error}")
 
 # Phase 4: Synthesize report
 report = llm.call(
@@ -621,7 +644,7 @@ emit({
 
 ### 4.2 Code Review Agent
 
-````python
+```slop
 # Review a pull request
 repo = input.repo
 pr_number = input.pr_number
@@ -724,11 +747,11 @@ emit({
     },
     reviews: reviews
 })
-````
+```
 
 ### 4.3 Data Entry Agent
 
-```python
+```slop
 # Process unstructured documents into structured data
 documents = input.documents  # List of {filename, content}
 schema = input.schema  # Expected output structure
@@ -801,12 +824,12 @@ emit({
 
 ### 5.1 Cross-Service Sync
 
-```python
+```slop
 # Sync data between Salesforce, HubSpot, and Airtable
 sync_type = input.sync_type or "full"  # full, incremental
 
 # Get last sync time for incremental
-last_sync = store.get("last_sync_time") if sync_type == "incremental" else none
+last_sync = store_get("last_sync_time") if sync_type == "incremental" else none
 
 # Fetch from all sources
 salesforce_contacts = salesforce.query(
@@ -898,7 +921,7 @@ for action in sync_actions with rate(10/s):
         results.errors.append({id: action.target_id, error: str(error)})
 
 # Save sync time
-store.set("last_sync_time", now())
+store_set("last_sync_time", now())
 
 emit({
     sync_type: sync_type,
@@ -915,14 +938,14 @@ emit({
 
 ### 5.2 Batch Processing Pipeline
 
-```python
+```slop
 # Process large batch with checkpointing
 items = input.items
 batch_size = input.batch_size or 100
 checkpoint_every = input.checkpoint_every or 10
 
 # Resume from checkpoint if exists
-checkpoint = store.get("batch_checkpoint")
+checkpoint = store_get("batch_checkpoint")
 start_index = checkpoint.index if checkpoint else 0
 results = checkpoint.results if checkpoint else []
 
@@ -952,14 +975,14 @@ for batch_num, batch in enumerate(batches) with limit(1000):
     
     # Checkpoint
     if batch_num % checkpoint_every == 0:
-        store.set("batch_checkpoint", {
+        store_set("batch_checkpoint", {
             index: start_index + (batch_num + 1) * batch_size,
             results: results
         })
-        log.info("Checkpoint saved at batch {batch_num}")
+        log_info("Checkpoint saved at batch {batch_num}")
 
 # Clear checkpoint on completion
-store.delete("batch_checkpoint")
+store_delete("batch_checkpoint")
 
 # Summary
 success_count = results | filter(r -> r.status == "success") | len()
@@ -979,7 +1002,7 @@ emit({
 
 ### 6.1 Self-Testing Script
 
-```python
+```slop
 # Script that tests itself
 test_results = []
 
@@ -1036,7 +1059,7 @@ emit({
 
 ### 7.1 CSV to JSON
 
-```python
+```slop
 csv_content = input.csv
 output = csv.parse(csv_content)
 emit(output)
@@ -1044,7 +1067,7 @@ emit(output)
 
 ### 7.2 URL Shortener Check
 
-```python
+```slop
 urls = input.urls
 results = []
 for url in urls with parallel(10), rate(50/s):
@@ -1058,7 +1081,7 @@ emit(results)
 
 ### 7.3 Markdown to HTML
 
-```python
+```slop
 markdown = input.markdown
 html = markdown.render(markdown)
 emit(html)
@@ -1066,7 +1089,7 @@ emit(html)
 
 ### 7.4 JSON Schema Validator
 
-```python
+```slop
 data = input.data
 schema = input.schema
 result = json_schema.validate(data, schema)
@@ -1075,11 +1098,7 @@ emit({valid: result.valid, errors: result.errors})
 
 ### 7.5 Hash File
 
-```python
+```slop
 content = input.content
-emit({
-    md5: hash.md5(content),
-    sha256: hash.sha256(content),
-    size: len(content)
-})
+emit(md5: hash_md5(content), sha256: hash_sha256(content), size: len(content))
 ```
