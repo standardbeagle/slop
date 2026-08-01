@@ -445,4 +445,4 @@ SLOP's restricted design enables:
 5. **Rollback changes** after failure
 6. **Audit everything** after completion
 
-The restrictions aren't limitations—they're features that make verification possible.
+These restrictions are what make verification possible before a script runs.
