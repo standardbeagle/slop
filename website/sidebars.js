@@ -21,7 +21,6 @@ const sidebars = {
       items: [
         'getting-started/installation',
         'getting-started/quick-start',
-        'getting-started/first-script',
       ],
     },
     {
@@ -29,10 +28,6 @@ const sidebars = {
       label: 'Language Guide',
       items: [
         'language/spec',
-        'language/syntax',
-        'language/types',
-        'language/control-flow',
-        'language/functions',
         'language/modules',
       ],
     },
@@ -41,10 +36,6 @@ const sidebars = {
       label: 'Built-in Functions',
       items: [
         'builtins/overview',
-        'builtins/string',
-        'builtins/math',
-        'builtins/collections',
-        'builtins/validation',
       ],
     },
     {
@@ -52,9 +43,7 @@ const sidebars = {
       label: 'Advanced Topics',
       items: [
         'advanced/agents',
-        'advanced/mcp-integration',
         'advanced/safety',
-        'advanced/performance',
       ],
     },
     {
@@ -63,16 +52,6 @@ const sidebars = {
       items: [
         'examples/chat-app',
         'examples/code-snippets',
-        'examples/best-practices',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'API Reference',
-      items: [
-        'api/runtime',
-        'api/evaluator',
-        'api/parser',
       ],
     },
   ],
