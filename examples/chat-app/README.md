@@ -99,8 +99,8 @@ user_msg = user_message
 response = "You said: " + user_msg
 
 # Stream response chunks with emit
-emit "Processing your request...\n\n"
-emit response
+emit("Processing your request...\n\n")
+emit(response)
 
 # Or return a final value
 response
@@ -112,9 +112,9 @@ response
 
 **Streaming with \`emit\`:**
 \`\`\`slop
-emit "First chunk\n"
-emit "Second chunk\n"
-emit "Final chunk"
+emit("First chunk\n")
+emit("Second chunk\n")
+emit("Final chunk")
 \`\`\`
 
 ## API Endpoints
