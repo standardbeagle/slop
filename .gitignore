@@ -37,3 +37,7 @@ website/.cache-loader/
 
 # worktrack loop state (per-clone, lease_holder carries email)
 .worktrack/
+
+# tman shims
+/test
+/test.cmd
