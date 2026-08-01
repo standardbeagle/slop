@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: Language Specification
-description: The full SLOP language reference: syntax, keywords, data types, control flow, and built-in call conventions.
+description: "The full SLOP language reference: syntax, keywords, data types, control flow, and built-in call conventions."
 ---
 
 # SLOP Language Specification
