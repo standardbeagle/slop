@@ -429,11 +429,9 @@ selected_code = "\n".join(selected)
 analysis = llm.call(
     prompt: """
     Analyze this code to extract as a function:
-    
-    ```
+
     {selected_code}
-    ```
-    
+
     Identify:
     1. Variables used but not defined in selection (parameters)
     2. Variables defined and used after selection (return values)
@@ -671,10 +669,8 @@ for file in files with limit(50):
         Status: {file.status}
         
         Diff:
-        ```
         {diff}
-        ```
-        
+
         Check for:
         1. Bugs or logic errors
         2. Security issues
