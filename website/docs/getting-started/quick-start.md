@@ -162,7 +162,7 @@ catch error:
 
 Now that you know the basics:
 
-- 🎓 [Learn the Language](/docs/language/syntax) - Deep dive into SLOP syntax
+- 🎓 [Learn the Language](/docs/language/spec) - Deep dive into SLOP syntax
 - 🔧 [Built-in Functions](/docs/builtins/overview) - Explore all available functions
 - 💡 [Examples](/docs/examples/chat-app) - See SLOP in action
 - 🚀 [Build an AI Agent](/docs/advanced/agents) - Create your first agent

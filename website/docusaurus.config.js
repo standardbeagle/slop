@@ -86,11 +86,11 @@ const config = {
               },
               {
                 label: 'Language Specification',
-                to: '/docs/spec',
+                to: '/docs/language/spec',
               },
               {
                 label: 'Examples',
-                to: '/docs/examples',
+                to: '/docs/examples/chat-app',
               },
             ],
           },

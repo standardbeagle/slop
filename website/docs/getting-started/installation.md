@@ -73,7 +73,6 @@ Hello, SLOP! 🚀
 
 ## Next Steps
 
-- 📝 [Write Your First Script](/docs/getting-started/first-script)
 - 🎓 [Quick Start Guide](/docs/getting-started/quick-start)
 - 📚 [Language Specification](/docs/language/spec)
 
