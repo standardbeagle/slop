@@ -70,14 +70,7 @@ for result in results with rate(5/s):
         log_warn("Failed to fetch {result.url}")
 
 # Summarize
-summary = llm.call(
-    prompt: "Summarize these documents about '{topic}':\n{documents}",
-    schema: {
-        summary: string,
-        key_points: list(string),
-        sources: list(string)
-    }
-)
+summary = llm.call(prompt: "Summarize these documents about '{topic}':\n{documents}", schema: {summary: string, key_points: list(string), sources: list(string)})
 
 emit(summary)
 ```
@@ -97,7 +90,7 @@ for record in raw_data with limit(10000):
     record.phone = normalize_phone(record.phone)
     
     # Validate
-    if not record.email or "@" not in record.email:
+    if not record.email or not contains(record.email, "@"):
         continue
     if not record.name:
         continue
@@ -109,23 +102,14 @@ cleaned = cleaned | unique(r -> r.email)
 
 # Categorize using LLM
 for batch in cleaned | chunk(50):
-    categories = llm.call(
-        prompt: "Categorize these contacts by industry:\n{batch}",
-        schema: {
-            categorized: list({email: string, industry: string})
-        }
-    )
+    categories = llm.call(prompt: "Categorize these contacts by industry:\n{batch}", schema: {categorized: list({email: string, industry: string})})
     
     for cat in categories.categorized:
         record = cleaned | find(r -> r.email == cat.email)
         if record:
             record.industry = cat.industry
 
-emit(
-    total: len(raw_data),
-    cleaned: len(cleaned),
-    data: cleaned
-)
+emit(total: len(raw_data), cleaned: len(cleaned), data: cleaned)
 ```
 
 ---
@@ -155,14 +139,7 @@ random_seed(seed)
 # Create regions
 regions = []
 for region_type in ["forest", "mountain", "plains", "coast", "desert"]:
-    region = {
-        id: uuid(),
-        name: gen.region_name(region_type),
-        type: region_type,
-        danger_level: random_int(1, 10),
-        climate: gen.climate(region_type),
-        locations: []
-    }
+    region = {id: uuid(), name: gen.region_name(region_type), type: region_type, danger_level: random_int(1, 10), climate: gen.climate(region_type), locations: []}
     regions.append(region)
 
 # Create locations in each region
@@ -172,16 +149,7 @@ for region in regions:
     for i in range(location_count):
         loc_type = random_choice(["town", "dungeon", "landmark", "camp"])
         
-        location = {
-            id: uuid(),
-            name: gen.location_name(loc_type, region.type),
-            type: loc_type,
-            region_id: region.id,
-            danger: region.danger_level + random_int(-2, 2) | clamp(1, 10),
-            npcs: [],
-            items: [],
-            connections: []
-        }
+        location = {id: uuid(), name: gen.location_name(loc_type, region.type), type: loc_type, region_id: region.id, danger: region.danger_level + random_int(-2, 2) | clamp(1, 10), npcs: [], items: [], connections: []}
         region.locations.append(location)
 
 # Populate towns with NPCs
@@ -192,26 +160,9 @@ for town in towns:
     pop_size = random_int(5, 15)
     
     for i in range(pop_size):
-        occupation = random_weighted({
-            farmer: 0.3,
-            merchant: 0.2,
-            guard: 0.15,
-            innkeeper: 0.1,
-            blacksmith: 0.1,
-            healer: 0.05,
-            mayor: 0.02,
-            beggar: 0.08
-        })
+        occupation = random_weighted({farmer: 0.3, merchant: 0.2, guard: 0.15, innkeeper: 0.1, blacksmith: 0.1, healer: 0.05, mayor: 0.02, beggar: 0.08})
         
-        npc = {
-            id: uuid(),
-            name: gen.npc_name(),
-            occupation: occupation,
-            location_id: town.id,
-            disposition: random_choice(["friendly", "neutral", "suspicious"]),
-            inventory: gen.inventory(occupation),
-            dialogue: gen.dialogue_hooks(occupation)
-        }
+        npc = {id: uuid(), name: gen.npc_name(), occupation: occupation, location_id: town.id, disposition: random_choice(["friendly", "neutral", "suspicious"]), inventory: gen.inventory(occupation), dialogue: gen.dialogue_hooks(occupation)}
         town.npcs.append(npc)
 
 # Connect nearby locations
@@ -221,7 +172,7 @@ for region in regions:
         # Connect to 1-3 other locations in region
         others = locs | filter(l -> l.id != loc.id) | shuffle() | take(random_int(1, 3))
         for other in others:
-            if other.id not in loc.connections:
+            if not contains(loc.connections, other.id):
                 loc.connections.append(other.id)
                 other.connections.append(loc.id)
 
@@ -240,29 +191,10 @@ for region in regions:
             giver_npc = random_choice(giver_loc.npcs) if giver_loc.npcs else none
             
             if giver_npc:
-                quest = {
-                    id: uuid(),
-                    name: gen.quest_name(),
-                    type: random_choice(["fetch", "kill", "escort", "discover"]),
-                    giver_id: giver_npc.id,
-                    target_location_id: target_loc.id,
-                    reward: gen.reward(region.danger_level),
-                    description: gen.quest_description()
-                }
+                quest = {id: uuid(), name: gen.quest_name(), type: random_choice(["fetch", "kill", "escort", "discover"]), giver_id: giver_npc.id, target_location_id: target_loc.id, reward: gen.reward(region.danger_level), description: gen.quest_description()}
                 quests.append(quest)
 
-emit({
-    name: world_name,
-    seed: seed,
-    regions: regions,
-    quests: quests,
-    stats: {
-        total_regions: len(regions),
-        total_locations: len(all_locations),
-        total_npcs: all_locations | flat_map(l -> l.npcs) | len(),
-        total_quests: len(quests)
-    }
-})
+emit({name: world_name, seed: seed, regions: regions, quests: quests, stats: {total_regions: len(regions), total_locations: len(all_locations), total_npcs: all_locations | flat_map(l -> l.npcs) | len(), total_quests: len(quests)}})
 ```
 
 ### 2.2 Procedural Dungeon
@@ -281,51 +213,26 @@ for floor_num in range(1, depth + 1):
     
     rooms = []
     for i in range(room_count):
-        room_type = random_weighted({
-            combat: 0.4,
-            treasure: 0.2,
-            puzzle: 0.15,
-            trap: 0.1,
-            rest: 0.1,
-            boss: 0.05 if i == room_count - 1 and floor_num == depth else 0
-        })
+        room_type = random_weighted({combat: 0.4, treasure: 0.2, puzzle: 0.15, trap: 0.1, rest: 0.1, boss: 0.05 if i == room_count - 1 and floor_num == depth else 0})
         
-        room = {
-            id: uuid(),
-            floor: floor_num,
-            type: room_type,
-            cleared: false,
-            connections: [],
-            contents: {}
-        }
+        room = {id: uuid(), floor: floor_num, type: room_type, cleared: false, connections: [], contents: {}}
         
         # Add room contents based on type
-        match room_type:
-            combat -> 
-                enemy_count = random_int(1, 3 + floor_num)
-                room.contents.enemies = [
-                    gen.enemy(floor_difficulty) for i in range(enemy_count)
-                ]
-            
-            treasure ->
-                room.contents.chest = {
-                    locked: random_chance(0.3),
-                    loot: gen.loot(floor_difficulty, random_int(1, 4))
-                }
-            
-            puzzle ->
-                room.contents.puzzle = gen.puzzle(floor_difficulty)
-            
-            trap ->
-                room.contents.trap = gen.trap(floor_difficulty)
-            
-            boss ->
-                room.contents.boss = gen.boss(floor_num, difficulty)
-                room.contents.loot = gen.legendary_loot(floor_num)
-            
-            rest ->
-                room.contents.campfire = true
-                room.contents.merchant = random_chance(0.3)
+        if room_type == "combat":
+            enemy_count = random_int(1, 3 + floor_num)
+            room.contents.enemies = range(enemy_count) | map(i -> gen.enemy(floor_difficulty))
+        elif room_type == "treasure":
+            room.contents.chest = {locked: random_chance(0.3), loot: gen.loot(floor_difficulty, random_int(1, 4))}
+        elif room_type == "puzzle":
+            room.contents.puzzle = gen.puzzle(floor_difficulty)
+        elif room_type == "trap":
+            room.contents.trap = gen.trap(floor_difficulty)
+        elif room_type == "boss":
+            room.contents.boss = gen.boss(floor_num, difficulty)
+            room.contents.loot = gen.legendary_loot(floor_num)
+        elif room_type == "rest":
+            room.contents.campfire = true
+            room.contents.merchant = random_chance(0.3)
         
         rooms.append(room)
     
@@ -339,30 +246,14 @@ for floor_num in range(1, depth + 1):
         
         # Maybe connect to another room
         if random_chance(0.3) and i > 1:
-            other = random_choice([r for r in rooms[:i] if r.id not in room.connections])
+            other = random_choice(rooms[:i] | filter(r -> not contains(room.connections, r.id)))
             if other:
                 room.connections.append(other.id)
                 other.connections.append(room.id)
     
-    floors.append({
-        level: floor_num,
-        rooms: rooms,
-        entrance: rooms[0].id if floor_num == 1 else none,
-        exit: rooms[-1].id,
-        stairs_down: rooms[-1].id if floor_num < depth else none
-    })
+    floors.append({level: floor_num, rooms: rooms, entrance: rooms[0].id if floor_num == 1 else none, exit: rooms[-1].id, stairs_down: rooms[-1].id if floor_num < depth else none})
 
-emit({
-    name: dungeon_name,
-    depth: depth,
-    difficulty: difficulty,
-    floors: floors,
-    stats: {
-        total_rooms: floors | flat_map(f -> f.rooms) | len(),
-        total_enemies: floors | flat_map(f -> f.rooms) | flat_map(r -> r.contents.enemies or []) | len(),
-        boss_floor: depth
-    }
-})
+emit({name: dungeon_name, depth: depth, difficulty: difficulty, floors: floors, stats: {total_rooms: floors | flat_map(f -> f.rooms) | len(), total_enemies: floors | flat_map(f -> f.rooms) | flat_map(r -> r.contents.enemies or []) | len(), boss_floor: depth}})
 ```
 
 ---
@@ -392,21 +283,13 @@ for func in public_funcs:
         params = func.params | map(p -> p.name) | join(", ")
         log_stmt = 'slog.Debug("entering {func.name}", "params", []any\{{params}\})'
         
-        edits.append({
-            type: "insert",
-            location: func.body.start + 1,  # After opening brace
-            content: "\n\t{log_stmt}\n"
-        })
+        edits.append({type: "insert", location: func.body.start + 1, content: "\n\t{log_stmt}\n"})  # location: after opening brace
 
 # Apply edits (reverse order to preserve positions)
 for edit in edits | sort(e -> -e.location):
     source = source[:edit.location] + edit.content + source[edit.location:]
 
-emit(
-    modified: source,
-    changes: len(edits),
-    functions_updated: edits | map(e -> e.func_name)
-)
+emit(modified: source, changes: len(edits), functions_updated: edits | map(e -> e.func_name))
 ```
 
 ### 3.2 Extract Function
@@ -426,24 +309,8 @@ selected = lines[start_line - 1:end_line]
 selected_code = "\n".join(selected)
 
 # Analyze the selected code
-analysis = llm.call(
-    prompt: """
-    Analyze this code to extract as a function:
-
-    {selected_code}
-
-    Identify:
-    1. Variables used but not defined in selection (parameters)
-    2. Variables defined and used after selection (return values)
-    3. Appropriate function signature
-    """,
-    schema: {
-        parameters: list({name: string, type: string}),
-        returns: list({name: string, type: string}),
-        signature: string,
-        cleaned_body: string
-    }
-)
+analysis_prompt = "\nAnalyze this code to extract as a function:\n\n{selected_code}\n\nIdentify:\n1. Variables used but not defined in selection (parameters)\n2. Variables defined and used after selection (return values)\n3. Appropriate function signature\n"
+analysis = llm.call(prompt: analysis_prompt, schema: {parameters: list({name: string, type: string}), returns: list({name: string, type: string}), signature: string, cleaned_body: string})
 
 # Generate new function
 params_str = analysis.parameters | map(p -> "{p.name} {p.type}") | join(", ")
@@ -451,11 +318,7 @@ returns_str = analysis.returns | map(r -> r.type) | join(", ")
 if len(analysis.returns) > 1:
     returns_str = "({returns_str})"
 
-new_function = """
-func {new_func_name}({params_str}) {returns_str} {{
-{analysis.cleaned_body | indent(1)}
-}}
-"""
+new_function = "\nfunc {new_func_name}({params_str}) {returns_str} {{\n{analysis.cleaned_body | indent(1)}\n}}\n"
 
 # Generate call site
 args = analysis.parameters | map(p -> p.name) | join(", ")
@@ -468,21 +331,12 @@ else:
     call = "{ret_names} := {new_func_name}({args})"
 
 # Build new source
-new_lines = (
-    lines[:start_line - 1] +
-    ["\t" + call] +
-    lines[end_line:]
-)
+new_lines = lines[:start_line - 1] + ["\t" + call] + lines[end_line:]
 
 # Find where to insert function (end of file, before closing brace if any)
 new_source = "\n".join(new_lines) + "\n" + new_function
 
-emit(
-    modified: new_source,
-    new_function: new_func_name,
-    parameters: analysis.parameters,
-    returns: analysis.returns
-)
+emit(modified: new_source, new_function: new_func_name, parameters: analysis.parameters, returns: analysis.returns)
 ```
 
 ### 3.3 Bulk Rename
@@ -509,30 +363,17 @@ for file_path in files:
         # Replace
         new_source = source.replace(old_name, new_name)
         
-        changes.append({
-            file: file_path,
-            occurrences: count,
-            original: source,
-            modified: new_source
-        })
+        changes.append({file: file_path, occurrences: count, original: source, modified: new_source})
 
 # Preview changes
-emit(
-    preview: true,
-    files_affected: len(changes),
-    total_occurrences: changes | map(c -> c.occurrences) | sum(),
-    changes: changes | map(c -> {file: c.file, count: c.occurrences})
-)
+emit(preview: true, files_affected: len(changes), total_occurrences: changes | map(c -> c.occurrences) | sum(), changes: changes | map(c -> {file: c.file, count: c.occurrences}))
 
 # If confirmed, apply changes
 if input.confirm:
     for change in changes:
         filesystem.write(change.file, change.modified)
     
-    emit(
-        applied: true,
-        files_modified: len(changes)
-    )
+    emit(applied: true, files_modified: len(changes))
 ```
 
 ---
@@ -547,15 +388,7 @@ query = input.query
 depth = input.depth or "standard"  # quick, standard, deep
 
 # Phase 1: Understand the query
-understanding = llm.call(
-    prompt: "Break down this research query:\n{query}",
-    schema: {
-        main_topic: string,
-        subtopics: list(string),
-        search_queries: list(string),
-        key_questions: list(string)
-    }
-)
+understanding = llm.call(prompt: "Break down this research query:\n{query}", schema: {main_topic: string, subtopics: list(string), search_queries: list(string), key_questions: list(string)})
 
 # Phase 2: Gather information
 search_limit = match depth:
@@ -565,7 +398,7 @@ search_limit = match depth:
 
 all_results = []
 for search_query in understanding.search_queries with limit(10), parallel(3):
-    results = web.search(search_query, limit: search_limit // len(understanding.search_queries))
+    results = web.search(search_query, limit: search_limit / len(understanding.search_queries))
     all_results.extend(results)
 
 # Deduplicate
@@ -578,66 +411,19 @@ for result in all_results with rate(5/s):
         page = web.fetch(result.url)
         
         # Extract key info using LLM
-        extraction = llm.call(
-            prompt: """
-            Extract information relevant to "{query}" from:
-            
-            URL: {result.url}
-            Content: {page.text[:10000]}
-            """,
-            schema: {
-                relevant: bool,
-                summary: string,
-                key_facts: list(string),
-                quotes: list(string)
-            }
-        )
+        extraction_prompt = "\nExtract information relevant to \"{query}\" from:\n\nURL: {result.url}\nContent: {page.text[:10000]}\n"
+        extraction = llm.call(prompt: extraction_prompt, schema: {relevant: bool, summary: string, key_facts: list(string), quotes: list(string)})
         
         if extraction.relevant:
-            documents.append({
-                url: result.url,
-                title: result.title,
-                summary: extraction.summary,
-                facts: extraction.key_facts,
-                quotes: extraction.quotes
-            })
+            documents.append({url: result.url, title: result.title, summary: extraction.summary, facts: extraction.key_facts, quotes: extraction.quotes})
     catch error:
         log_warn("Failed to process {result.url}: {error}")
 
 # Phase 4: Synthesize report
-report = llm.call(
-    prompt: """
-    Write a research report on: {query}
-    
-    Key questions to answer:
-    {understanding.key_questions}
-    
-    Sources and findings:
-    {documents}
-    """,
-    schema: {
-        title: string,
-        executive_summary: string,
-        sections: list({
-            heading: string,
-            content: string,
-            sources: list(string)
-        }),
-        conclusions: list(string),
-        further_research: list(string)
-    }
-)
+report_prompt = "\nWrite a research report on: {query}\n\nKey questions to answer:\n{understanding.key_questions}\n\nSources and findings:\n{documents}\n"
+report = llm.call(prompt: report_prompt, schema: {title: string, executive_summary: string, sections: list({heading: string, content: string, sources: list(string)}), conclusions: list(string), further_research: list(string)})
 
-emit({
-    report: report,
-    sources: documents | map(d -> {url: d.url, title: d.title}),
-    metadata: {
-        query: query,
-        depth: depth,
-        sources_searched: len(all_results),
-        sources_used: len(documents)
-    }
-})
+emit({report: report, sources: documents | map(d -> {url: d.url, title: d.title}), metadata: {query: query, depth: depth, sources_searched: len(all_results), sources_used: len(documents)}})
 ```
 
 ### 4.2 Code Review Agent
@@ -654,47 +440,17 @@ files = github.get_pr_files(repo, pr_number)
 reviews = []
 
 for file in files with limit(50):
-    if not file.filename.endswith((".go", ".py", ".ts", ".js")):
+    if not file.filename.endswith([".go", ".py", ".ts", ".js"]):
         continue
     
     # Get the diff
     diff = file.patch
     
     # Review with LLM
-    review = llm.call(
-        prompt: """
-        Review this code change:
-        
-        File: {file.filename}
-        Status: {file.status}
-        
-        Diff:
-        {diff}
-
-        Check for:
-        1. Bugs or logic errors
-        2. Security issues
-        3. Performance concerns
-        4. Code style / best practices
-        5. Missing error handling
-        6. Missing tests
-        """,
-        schema: {
-            summary: string,
-            issues: list({
-                severity: enum(critical, warning, suggestion),
-                line: int?,
-                description: string,
-                suggestion: string?
-            }),
-            approved: bool
-        }
-    )
+    review_prompt = "\nReview this code change:\n\nFile: {file.filename}\nStatus: {file.status}\n\nDiff:\n{diff}\n\nCheck for:\n1. Bugs or logic errors\n2. Security issues\n3. Performance concerns\n4. Code style / best practices\n5. Missing error handling\n6. Missing tests\n"
+    review = llm.call(prompt: review_prompt, schema: {summary: string, issues: list({severity: enum(critical, warning, suggestion), line: int, description: string, suggestion: string}), approved: bool})
     
-    reviews.append({
-        file: file.filename,
-        review: review
-    })
+    reviews.append({file: file.filename, review: review})
 
 # Aggregate results
 all_issues = reviews | flat_map(r -> r.review.issues)
@@ -702,47 +458,14 @@ critical_count = all_issues | filter(i -> i.severity == "critical") | len()
 warning_count = all_issues | filter(i -> i.severity == "warning") | len()
 
 # Generate overall verdict
-verdict = llm.call(
-    prompt: """
-    Based on these file reviews, provide an overall PR verdict:
-    
-    Reviews: {reviews}
-    
-    Critical issues: {critical_count}
-    Warnings: {warning_count}
-    """,
-    schema: {
-        approved: bool,
-        summary: string,
-        blocking_issues: list(string),
-        suggestions: list(string)
-    }
-)
+verdict_prompt = "\nBased on these file reviews, provide an overall PR verdict:\n\nReviews: {reviews}\n\nCritical issues: {critical_count}\nWarnings: {warning_count}\n"
+verdict = llm.call(prompt: verdict_prompt, schema: {approved: bool, summary: string, blocking_issues: list(string), suggestions: list(string)})
 
 # Post review to GitHub
 if input.post_review:
-    github.create_review(
-        repo: repo,
-        pr: pr_number,
-        event: "COMMENT" if verdict.approved else "REQUEST_CHANGES",
-        body: verdict.summary,
-        comments: all_issues | filter(i -> i.line) | map(i -> {
-            path: i.file,
-            line: i.line,
-            body: "[{i.severity}] {i.description}\n\n{i.suggestion or ''}"
-        })
-    )
+    github.create_review(repo: repo, pr: pr_number, event: "COMMENT" if verdict.approved else "REQUEST_CHANGES", body: verdict.summary, comments: all_issues | filter(i -> i.line) | map(i -> {path: i.file, line: i.line, body: "[{i.severity}] {i.description}\n\n{i.suggestion or ''}"}))
 
-emit({
-    verdict: verdict,
-    files_reviewed: len(reviews),
-    issues: {
-        critical: critical_count,
-        warnings: warning_count,
-        suggestions: all_issues | filter(i -> i.severity == "suggestion") | len()
-    },
-    reviews: reviews
-})
+emit({verdict: verdict, files_reviewed: len(reviews), issues: {critical: critical_count, warnings: warning_count, suggestions: all_issues | filter(i -> i.severity == "suggestion") | len()}, reviews: reviews})
 ```
 
 ### 4.3 Data Entry Agent
@@ -757,61 +480,24 @@ errors = []
 
 for doc in documents with limit(100), rate(5/s):
     # Extract structured data
-    extraction = llm.call(
-        prompt: """
-        Extract data from this document according to the schema.
-        
-        Document ({doc.filename}):
-        {doc.content}
-        
-        Schema:
-        {schema}
-        
-        If a field cannot be determined, use null.
-        If confident about extraction, set confidence to high.
-        """,
-        schema: {
-            data: schema,
-            confidence: enum(high, medium, low),
-            uncertain_fields: list(string),
-            notes: string?
-        }
-    )
+    extraction_prompt = "\nExtract data from this document according to the schema.\n\nDocument ({doc.filename}):\n{doc.content}\n\nSchema:\n{schema}\n\nIf a field cannot be determined, use null.\nIf confident about extraction, set confidence to high.\n"
+    extraction = llm.call(prompt: extraction_prompt, schema: {data: schema, confidence: enum(high, medium, low), uncertain_fields: list(string), notes: string})
     
     # Validate extraction
     if extraction.confidence == "low":
-        errors.append({
-            document: doc.filename,
-            reason: "low_confidence",
-            uncertain: extraction.uncertain_fields
-        })
+        errors.append({document: doc.filename, reason: "low_confidence", uncertain: extraction.uncertain_fields})
         continue
     
     # Validate required fields
     missing = validate_required(extraction.data, schema)
     if missing:
-        errors.append({
-            document: doc.filename,
-            reason: "missing_required",
-            fields: missing
-        })
+        errors.append({document: doc.filename, reason: "missing_required", fields: missing})
         continue
     
-    results.append({
-        source: doc.filename,
-        data: extraction.data,
-        confidence: extraction.confidence,
-        notes: extraction.notes
-    })
+    results.append({source: doc.filename, data: extraction.data, confidence: extraction.confidence, notes: extraction.notes})
 
 # Summary
-emit({
-    processed: len(results),
-    errors: len(errors),
-    success_rate: len(results) / len(documents) * 100,
-    results: results,
-    error_details: errors
-})
+emit({processed: len(results), errors: len(errors), success_rate: len(results) / len(documents) * 100, results: results, error_details: errors})
 ```
 
 ---
@@ -828,55 +514,23 @@ sync_type = input.sync_type or "full"  # full, incremental
 last_sync = store_get("last_sync_time") if sync_type == "incremental" else none
 
 # Fetch from all sources
-salesforce_contacts = salesforce.query(
-    "SELECT Id, Email, Name, Company, UpdatedAt FROM Contact" +
-    (" WHERE UpdatedAt > {last_sync}" if last_sync else "") +
-    " LIMIT 1000"
-)
+salesforce_contacts = salesforce.query("SELECT Id, Email, Name, Company, UpdatedAt FROM Contact" + (" WHERE UpdatedAt > {last_sync}" if last_sync else "") + " LIMIT 1000")
 
-hubspot_contacts = hubspot.get_contacts(
-    updated_after: last_sync,
-    limit: 1000
-)
+hubspot_contacts = hubspot.get_contacts(updated_after: last_sync, limit: 1000)
 
-airtable_contacts = airtable.list_records(
-    base: "contacts",
-    filter: {updated_after: last_sync} if last_sync else {}
-)
+airtable_contacts = airtable.list_records(base: "contacts", filter: {updated_after: last_sync} if last_sync else {})
 
 # Normalize to common format
 def normalize_salesforce(c):
-    return {
-        email: c.Email.lower(),
-        name: c.Name,
-        company: c.Company,
-        source: "salesforce",
-        source_id: c.Id
-    }
+    return {email: c.Email.lower(), name: c.Name, company: c.Company, source: "salesforce", source_id: c.Id}
 
 def normalize_hubspot(c):
-    return {
-        email: c.properties.email?.lower(),
-        name: "{c.properties.firstname} {c.properties.lastname}".strip(),
-        company: c.properties.company,
-        source: "hubspot",
-        source_id: c.id
-    }
+    return {email: c.properties.email?.lower(), name: "{c.properties.firstname} {c.properties.lastname}".strip(), company: c.properties.company, source: "hubspot", source_id: c.id}
 
 def normalize_airtable(c):
-    return {
-        email: c.fields.Email?.lower(),
-        name: c.fields.Name,
-        company: c.fields.Company,
-        source: "airtable",
-        source_id: c.id
-    }
+    return {email: c.fields.Email?.lower(), name: c.fields.Name, company: c.fields.Company, source: "airtable", source_id: c.id}
 
-all_contacts = (
-    salesforce_contacts | map(normalize_salesforce) |
-    concat(hubspot_contacts | map(normalize_hubspot)) |
-    concat(airtable_contacts | map(normalize_airtable))
-)
+all_contacts = salesforce_contacts | map(normalize_salesforce) | concat(hubspot_contacts | map(normalize_hubspot)) | concat(airtable_contacts | map(normalize_airtable))
 
 # Group by email to find records that need syncing
 by_email = all_contacts | group(c -> c.email)
@@ -895,12 +549,7 @@ for email, records in by_email.items():
         
         # Check if update needed
         if needs_update(record, master):
-            sync_actions.append({
-                action: "update",
-                target: record.source,
-                target_id: record.source_id,
-                data: master
-            })
+            sync_actions.append({action: "update", target: record.source, target_id: record.source_id, data: master})
 
 # Execute sync actions
 results = {updated: 0, failed: 0, errors: []}
@@ -919,17 +568,7 @@ for action in sync_actions with rate(10/s):
 # Save sync time
 store_set("last_sync_time", now())
 
-emit({
-    sync_type: sync_type,
-    sources_checked: {
-        salesforce: len(salesforce_contacts),
-        hubspot: len(hubspot_contacts),
-        airtable: len(airtable_contacts)
-    },
-    unique_contacts: len(by_email),
-    actions_taken: len(sync_actions),
-    results: results
-})
+emit({sync_type: sync_type, sources_checked: {salesforce: len(salesforce_contacts), hubspot: len(hubspot_contacts), airtable: len(airtable_contacts)}, unique_contacts: len(by_email), actions_taken: len(sync_actions), results: results})
 ```
 
 ### 5.2 Batch Processing Pipeline
@@ -971,10 +610,7 @@ for batch_num, batch in enumerate(batches) with limit(1000):
     
     # Checkpoint
     if batch_num % checkpoint_every == 0:
-        store_set("batch_checkpoint", {
-            index: start_index + (batch_num + 1) * batch_size,
-            results: results
-        })
+        store_set("batch_checkpoint", {index: start_index + (batch_num + 1) * batch_size, results: results})
         log_info("Checkpoint saved at batch {batch_num}")
 
 # Clear checkpoint on completion
@@ -984,12 +620,7 @@ store_delete("batch_checkpoint")
 success_count = results | filter(r -> r.status == "success") | len()
 error_count = results | filter(r -> r.status == "error") | len()
 
-emit({
-    total_processed: len(results),
-    success: success_count,
-    errors: error_count,
-    error_details: results | filter(r -> r.status == "error") | take(100)
-})
+emit({total_processed: len(results), success: success_count, errors: error_count, error_details: results | filter(r -> r.status == "error") | take(100)})
 ```
 
 ---
@@ -1004,19 +635,11 @@ test_results = []
 
 def assert_eq(actual, expected, name):
     passed = actual == expected
-    test_results.append({
-        name: name,
-        passed: passed,
-        actual: actual,
-        expected: expected
-    })
+    test_results.append({name: name, passed: passed, actual: actual, expected: expected})
     return passed
 
 def assert_true(condition, name):
-    test_results.append({
-        name: name,
-        passed: condition
-    })
+    test_results.append({name: name, passed: condition})
     return condition
 
 # Test cases
@@ -1030,23 +653,14 @@ assert_true(len([1, 2, 3]) == 3, "len_function")
 if env.mode == "test":
     mock.llm.call = (args) -> {answer: "mocked"}
 
-result = llm.call(
-    prompt: "test",
-    schema: {answer: string}
-)
+result = llm.call(prompt: "test", schema: {answer: string})
 assert_eq(result.answer, "mocked" if env.mode == "test" else result.answer, "llm_call")
 
 # Report
 passed = test_results | filter(t -> t.passed) | len()
 failed = test_results | filter(t -> not t.passed) | len()
 
-emit({
-    total: len(test_results),
-    passed: passed,
-    failed: failed,
-    success: failed == 0,
-    failures: test_results | filter(t -> not t.passed)
-})
+emit({total: len(test_results), passed: passed, failed: failed, success: failed == 0, failures: test_results | filter(t -> not t.passed)})
 ```
 
 ---
