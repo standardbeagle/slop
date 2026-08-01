@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-title: Example: Code Snippets
+title: "Example: Code Snippets"
 description: SLOP code patterns for data pipelines, procedural generation, code editing, and multi-service agent workflows.
 ---
 
