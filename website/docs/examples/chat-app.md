@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Example: Chat Application
+description: Build a streaming chat backend in Go that runs SLOP agent scripts, with a minimal frontend.
 ---
 
 # SLOP Chat Application

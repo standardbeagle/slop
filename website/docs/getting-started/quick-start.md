@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Quick Start
+description: Write and run your first SLOP script in five minutes — variables, control flow, functions, streaming output, and built-in functions.
 ---
 
 # Quick Start

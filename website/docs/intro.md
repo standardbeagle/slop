@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Introduction
+description: SLOP is a Python-like scripting language for building AI agents, orchestrating LLM workflows, and streaming responses with built-in safety limits.
 ---
 
 # Introduction to SLOP

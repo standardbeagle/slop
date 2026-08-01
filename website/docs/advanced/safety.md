@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Safety & Resource Limits
+description: How SLOP enforces iteration limits, rate limits, and timeouts to keep agent scripts bounded and safe.
 ---
 
 # SLOP Safety Model

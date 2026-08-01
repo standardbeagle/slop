@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Installation
+description: Install SLOP from source with Go — clone the repository, build the binary, and verify it with a hello-world script.
 ---
 
 # Installation

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Built-in Functions
+description: Reference for SLOP's built-in string, math, list, map, and utility functions, with usage examples.
 ---
 
 # SLOP Built-ins

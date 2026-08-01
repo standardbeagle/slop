@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Building AI Agents
+description: Patterns for building LLM-driven agents in SLOP, including tool calling and multi-step workflows.
 ---
 
 # SLOP Agents

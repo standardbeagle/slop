@@ -1,5 +1,7 @@
 ---
 sidebar_position: 6
+title: Modules
+description: Organize SLOP scripts into reusable, importable modules with the ===SOURCE===/===USE===/===MAIN=== block syntax.
 ---
 
 # SLOP Modules

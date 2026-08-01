@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Example: Code Snippets
+description: Runnable SLOP snippets covering strings, collections, control flow, and built-in functions.
 ---
 
 # SLOP Examples
