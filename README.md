@@ -11,7 +11,7 @@ response = llm.call(user_input)
 emit response
 ```
 
-[![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://standardbeagle.github.io/slop/)
+[![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://dev.standardbeagle.com/slop/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?logo=go)](https://go.dev)
 
@@ -75,14 +75,14 @@ Run it:
 
 ## 📚 Documentation
 
-**Full documentation:** [standardbeagle.github.io/slop](https://standardbeagle.github.io/slop/)
+**Full documentation:** [dev.standardbeagle.com/slop](https://dev.standardbeagle.com/slop/)
 
 Quick links:
-- [Getting Started](https://standardbeagle.github.io/slop/docs/getting-started/installation)
-- [Language Specification](https://standardbeagle.github.io/slop/docs/language/spec)
-- [Built-in Functions](https://standardbeagle.github.io/slop/docs/builtins/overview)
-- [Examples](https://standardbeagle.github.io/slop/docs/examples/chat-app)
-- [API Reference](https://standardbeagle.github.io/slop/docs/api/runtime)
+- [Getting Started](https://dev.standardbeagle.com/slop/docs/getting-started/installation)
+- [Language Specification](https://dev.standardbeagle.com/slop/docs/language/spec)
+- [Built-in Functions](https://dev.standardbeagle.com/slop/docs/builtins/overview)
+- [Examples](https://dev.standardbeagle.com/slop/docs/examples/chat-app)
+- [API Reference](https://dev.standardbeagle.com/slop/docs/api/runtime)
 
 ## 🎯 Key Features
 
@@ -217,7 +217,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## 🔗 Links
 
-- **Documentation**: [standardbeagle.github.io/slop](https://standardbeagle.github.io/slop/)
+- **Documentation**: [dev.standardbeagle.com/slop](https://dev.standardbeagle.com/slop/)
 - **GitHub**: [github.com/standardbeagle/slop](https://github.com/standardbeagle/slop)
 - **Issues**: [github.com/standardbeagle/slop/issues](https://github.com/standardbeagle/slop/issues)
 - **Discussions**: [github.com/standardbeagle/slop/discussions](https://github.com/standardbeagle/slop/discussions)
