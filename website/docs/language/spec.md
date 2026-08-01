@@ -29,6 +29,7 @@ UTF-8. Indentation: 4 spaces (no tabs).
 
 ```
 if elif else for in with match def return emit stop
+try catch break continue pause
 and or not true false none range limit rate parallel timeout
 ```
 
@@ -123,9 +124,6 @@ enum(pending, active, done)
 range(10)       # 0..9
 range(1, 10)    # 1..9
 range(0, 10, 2) # 0, 2, 4, 6, 8
-
-# Reference
-ref(some_id)    # Reference to entity
 ```
 
 ### 2.4 Type Annotations (Optional)
@@ -479,18 +477,6 @@ for item in result.field4:
     process(item)
 ```
 
-### 6.3 Agent Calls
-
-Invoke a sub-agent (another SLOP script):
-
-```python
-result = agent.call(
-    script: "agents/researcher.slop",
-    input: {query: "topic to research"},
-    limits: {max_steps: 10, timeout: 60s}
-)
-```
-
 ---
 
 ## 7. Built-in Functions
@@ -590,17 +576,17 @@ items | last()               # Last item or none
 ### 7.7 Utility Functions
 
 ```python
-print(values...)    # Debug output
-log.debug(msg)      # Log at debug level
-log.info(msg)       # Log at info level  
-log.warn(msg)       # Log at warn level
-log.error(msg)      # Log at error level
-sleep(seconds)      # Pause execution
-now()               # Current timestamp
-uuid()              # Generate UUID
-hash(value)         # Hash value
-json.parse(string)  # Parse JSON
-json.stringify(val) # To JSON string
+print(values...)      # Debug output
+log_debug(msg)         # Log at debug level
+log_info(msg)          # Log at info level
+log_warn(msg)           # Log at warn level
+log_error(msg)          # Log at error level
+sleep(seconds)          # Pause execution
+now()                   # Current timestamp
+uuid()                  # Generate UUID
+hash_md5(value)         # MD5 hash (also hash_sha256, hash_sha512, hash_hmac)
+json_parse(string)      # Parse JSON
+json_stringify(val)     # To JSON string
 ```
 
 ---
@@ -686,12 +672,14 @@ for batch in batches:
 
 ```python
 # Store for later steps or debugging
-store("key", value)
-stored_value = load("key")
-
-# Named checkpoints
-checkpoint("after_fetch", data)
+store_set("key", value)
+stored_value = store_get("key")
+store_delete("key")
 ```
+
+Script-level resume/replay checkpoints (`slop resume`, `--checkpoint-dir`) are a
+CLI feature, not a callable built-in — see the [Safety & Resource Limits](/docs/advanced/safety)
+page.
 
 ---
 
@@ -779,6 +767,6 @@ lambda      = params "->" expr ;
 
 ```
 async await yield class import from as
-try catch finally raise with assert
-global nonlocal del pass break continue
+finally raise assert
+global nonlocal del pass
 ```
