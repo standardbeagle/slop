@@ -21,7 +21,9 @@ str(x)              # Convert to string
 bool(x)             # Convert to boolean
 list(x)             # Convert iterable to list
 set(x)              # Convert iterable to set
-dict(x)             # Convert pairs to dict
+dict(x)             # Convert a list of [key, value] pairs to a map —
+                    # the resulting map's key order is currently unreliable
+                    # for keys()/emit(); json_stringify(x) shows it correctly
 ```
 
 ### 1.2 Type Checking
@@ -73,14 +75,16 @@ s.endswith(suffix)
 s.contains(substr)  # Or: substr in s
 s.find(substr)      # Index or -1
 s.count(substr)     # Count occurrences
-s.format(args...)   # Format string
-s.pad_left(n, char?)
-s.pad_right(n, char?)
-s.slice(start, end?)
 s.repeat(n)         # Repeat n times
 s.reverse()         # Reverse string
 s.lines()           # Split by newlines
 s.words()           # Split by whitespace
+
+# Free functions, not string methods:
+format(fmt, args...) # Format string
+pad_left(s, n, char?)
+pad_right(s, n, char?)
+slice(s, start, end?)
 ```
 
 ### 1.5 List Functions
@@ -95,12 +99,12 @@ list.pop(i?)        # Remove and return (mutates)
 list.clear()        # Remove all (mutates)
 list.index(x)       # Find index or error
 list.count(x)       # Count occurrences
-list.sort(key?)     # Sort in place (mutates)
+list.sort()         # Sort in place, ascending only (mutates)
 list.reverse()      # Reverse in place (mutates)
 list.copy()         # Shallow copy
 
-# Non-mutating versions
-sorted(list, key?)  # Return sorted copy
+# Non-mutating, and the only forms that take a key function or reverse:
+sorted(list, key_fn?, reverse: bool?)  # Return sorted copy
 reversed(list)      # Return reversed copy
 ```
 
@@ -133,21 +137,21 @@ x in set            # Check membership
 set.union(other)    # a | b
 set.intersection(other)  # a & b
 set.difference(other)    # a - b
-set.symmetric_difference(other)  # a ^ b
 set.issubset(other)
 set.issuperset(other)
+symmetric_difference(a, b)  # a ^ b — free function, not a set method
 ```
 
 ---
 
 ## 2. Collection Pipeline
 
-All pipeline functions work with `|` or as methods:
+The functions below are free functions, chained with the `|` pipe operator.
+They are not list methods — `items.filter(...)` does not work; list
+methods are the fixed set in section 1.5 above.
 
 ```python
-# These are equivalent:
 items | filter(x -> x > 0) | map(x -> x * 2)
-items.filter(x -> x > 0).map(x -> x * 2)
 ```
 
 ### 2.1 Transformation
@@ -185,11 +189,11 @@ slice(start, end?)  # Slice of list
 ### 2.4 Ordering
 
 ```python
-sort()              # Sort ascending
-sort(key_fn)        # Sort by key
-sort(key_fn, reverse: true)  # Sort descending
-reverse()           # Reverse order
-shuffle()           # Random order (seeded)
+sorted(items)                        # Sort ascending
+sorted(items, key_fn)                # Sort by key
+sorted(items, key_fn, reverse: true) # Sort descending
+reversed(items)                      # Reverse order
+random_shuffle(items)                # Random order (seed with random_seed(n))
 ```
 
 ### 2.5 Grouping
@@ -259,17 +263,16 @@ result = llm.call(
     },
     
     # Optional
-    model: string,           # "claude-sonnet", "claude-opus", etc.
+    model: string,           # Defaults to "claude-sonnet"
     system: string,          # System prompt
-    max_tokens: int,         # Max output tokens
-    temperature: float,      # 0.0 - 1.0
-    stop: list(string),      # Stop sequences
-    
-    # Cost control
-    cache: bool,             # Cache identical requests
-    timeout: duration        # Request timeout
+    max_tokens: int,         # Defaults to 4096
+    temperature: float       # Defaults to 0.0
 )
 ```
+
+`stop`, `cache`, and `timeout` kwargs are not read by the LLM service —
+only `prompt`, `schema`, `model`, `system`, `max_tokens`, and `temperature`
+are.
 
 ### 3.3 Schema Types
 
@@ -309,6 +312,12 @@ schema: {
 ---
 
 ## 4. MCP Services
+
+Services are registered by the host application (`Runtime.RegisterService`,
+see [Extension Points](#9-extension-points)), not built into the SLOP
+runtime itself. The only service registered by default is `llm` (section 3).
+`web`, `filesystem`, `db`, and `git` below are illustrative names for
+services a host might register — they ship with nothing out of the box.
 
 ### 4.1 Service Call Syntax
 
@@ -406,66 +415,45 @@ For procedural generation (world building, etc.):
 ### 5.1 Random
 
 ```python
-random.seed(value)       # Set seed for reproducibility
-random.int(min, max)     # Random integer in range
-random.float(min, max)   # Random float in range
-random.choice(list)      # Random element
-random.choices(list, n)  # n random elements
-random.shuffle(list)     # Shuffled copy
-random.chance(p)         # True with probability p
-random.weighted(map)     # Weighted random choice
-# e.g., random.weighted({common: 0.7, rare: 0.2, epic: 0.1})
+random_seed(value)       # Set seed for reproducibility
+random_int(min, max)     # Random integer in range
+random_float(min, max)   # Random float in range
+random_choice(list)      # Random element
+random_choices(list, n)  # n random elements
+random_shuffle(list)     # Shuffled copy
+random_chance(p)         # True with probability p
+random_weighted(map)     # Weighted random choice
+# e.g., random_weighted({common: 0.7, rare: 0.2, epic: 0.1})
 
-random.uuid()            # Random UUID
-random.hex(n)            # Random hex string of length n
+random_uuid()            # Random UUID
+random_hex(n)            # Random hex string of length n
 ```
 
 ### 5.2 Generators
 
 ```python
-gen.name()               # Random person name
-gen.name(gender: "female")
-gen.first_name()
-gen.last_name()
+gen_name()                # Random person name — gender kwarg is accepted
+                           # but currently ignored
+gen_first_name()
+gen_last_name()
 
-gen.email()              # Random email
-gen.phone()              # Random phone number
-gen.address()            # Random address
+gen_email()                # Random email
+gen_phone()                # Random phone number
 
-gen.company()            # Company name
-gen.domain()             # Domain name
-gen.url()                # URL
+gen_word()                  # Random word
+gen_words(n)                 # n random words
+gen_sentence()               # Random sentence
+gen_paragraph()               # Random paragraph
+gen_lorem(words: 100)         # Lorem ipsum text
 
-gen.word()               # Random word
-gen.words(n)             # n random words
-gen.sentence()           # Random sentence
-gen.paragraph()          # Random paragraph
-gen.lorem(words: 100)    # Lorem ipsum text
-
-gen.date(start?, end?)   # Random date
-gen.datetime(start?, end?)
-gen.time()
-
-gen.color()              # Random color (hex)
-gen.rgb()                # RGB tuple
+gen_color()                  # Random color (hex)
+gen_rgb()                    # RGB tuple
 ```
 
-### 5.3 Custom Generators
-
-For world building:
-
-```python
-gen.fantasy_name()        # Fantasy character name
-gen.tavern_name()         # "The Prancing Pony"
-gen.town_name()           # "Riverdale"
-gen.region_name(type)     # Based on terrain type
-gen.quest_name()          # "The Lost Artifact"
-
-gen.item(type, rarity?)   # Generate item
-gen.enemy(difficulty)     # Generate enemy stats
-gen.loot(level, count)    # Generate loot table
-gen.dialogue(npc_type)    # Dialogue snippets
-```
+There is no `gen_address`, `gen_company`, `gen_domain`, `gen_url`,
+`gen_date`, `gen_datetime`, or `gen_time` generator, and there are no
+world-building generators (names, items, enemies, loot) — those are not
+implemented.
 
 ---
 
@@ -476,59 +464,58 @@ gen.dialogue(npc_type)    # Dialogue snippets
 ```python
 now()                    # Current timestamp
 today()                  # Current date
-time.parse(string, format?)
-time.format(timestamp, format)
-time.add(timestamp, duration)
-time.diff(t1, t2)        # Difference in seconds
+time_parse(string, format?)
+time_format(timestamp, format)
+time_add(timestamp, duration)
+time_diff(t1, t2)        # Difference in seconds
 sleep(seconds)           # Pause execution
 ```
 
 ### 6.2 JSON
 
 ```python
-json.parse(string)       # Parse JSON
-json.stringify(value)    # To JSON string
-json.stringify(value, indent: 2)  # Pretty print
+json_parse(string)       # Parse JSON
+json_stringify(value)    # To JSON string
+json_stringify(value, indent: 2)  # Pretty print
 ```
 
 ### 6.3 Encoding
 
 ```python
-base64.encode(string)
-base64.decode(string)
-url.encode(string)
-url.decode(string)
-html.escape(string)
-html.unescape(string)
+base64_encode(string)
+base64_decode(string)
+url_encode(string)
+url_decode(string)
+html_escape(string)
+html_unescape(string)
 ```
 
 ### 6.4 Hashing
 
 ```python
-hash.md5(string)
-hash.sha256(string)
-hash.sha512(string)
-hash.hmac(string, key, algorithm?)
+hash_md5(string)
+hash_sha256(string)
+hash_sha512(string)
+hash_hmac(string, key, algorithm?)
 ```
 
 ### 6.5 Regex
 
 ```python
-regex.match(pattern, string)    # First match or none
-regex.find_all(pattern, string) # All matches
-regex.replace(pattern, string, replacement)
-regex.split(pattern, string)
-regex.test(pattern, string)     # Returns bool
+regex_match(pattern, string)    # First match or none
+regex_find_all(pattern, string) # All matches
+regex_replace(pattern, string, replacement)
+regex_split(pattern, string)
+regex_test(pattern, string)     # Returns bool
 ```
 
 ### 6.6 Validation
 
 ```python
-validate.email(string)   # Returns bool
-validate.url(string)
-validate.uuid(string)
-validate.json(string)
-validate.schema(data, schema)  # Returns {valid, errors}
+validate_email(string)   # Returns bool
+validate_url(string)
+validate_uuid(string)
+validate_json(string)
 ```
 
 ---
@@ -538,29 +525,29 @@ validate.schema(data, schema)  # Returns {valid, errors}
 ### 7.1 Logging
 
 ```python
-log.debug(message, data?)
-log.info(message, data?)
-log.warn(message, data?)
-log.error(message, data?)
+log_debug(message, data?)
+log_info(message, data?)
+log_warn(message, data?)
+log_error(message, data?)
 ```
 
 ### 7.2 Storage
 
 ```python
-store.get(key)           # Get value or none
-store.set(key, value)    # Set value
-store.delete(key)        # Remove value
-store.exists(key)        # Check exists
-store.keys(prefix?)      # List keys
+store_get(key)           # Get value or none
+store_set(key, value)    # Set value
+store_delete(key)        # Remove value
+store_exists(key)        # Check exists
+store_keys(prefix?)      # List keys
 ```
 
 ### 7.3 Environment
 
 ```python
-env.get(name)            # Get env var or none
-env.get(name, default)   # Get with default
-env.mode                 # "production", "test", "development"
-env.debug                # Debug mode enabled
+env_get(name)             # Get env var or none — reads any OS env var by name
+env_get(name, default)    # Get with default
+env_mode()                 # "production", "test", or "development"
+env_debug()                 # true if SLOP_DEBUG is "1" or "true"
 ```
 
 ### 7.4 Assertions
@@ -602,52 +589,24 @@ error(message, data)     # Raise with data
 
 ### 8.3 Checkpoints
 
-```python
-checkpoint(name)         # Save state
-checkpoint(name, data)   # Save with extra data
-
-# Resume from checkpoint on restart
-```
+There is no `checkpoint()` built-in. Script checkpointing and resume are a
+CLI feature: run with `--checkpoint-dir <dir>`, then resume with
+`slop resume <checkpoint>` — see [Safety & Resource Limits](/docs/advanced/safety).
 
 ---
 
-## 9. Agent Helpers
-
-### 9.1 Sub-Agents
-
-```python
-result = agent.run(
-    script: "path/to/agent.slop",
-    input: {...},
-    limits: {
-        max_steps: 10,
-        max_llm_calls: 20,
-        timeout: 60s,
-        max_cost: 5.00
-    }
-)
-```
-
-### 9.2 Tools
-
-```python
-tools.list()             # List available tools
-tools.describe(name)     # Get tool description
-tools.call(name, args)   # Dynamic tool call
-```
-
 ---
 
-## 10. Extension Points
+## 9. Extension Points
 
-### 10.1 Custom Functions
+### 9.1 Custom Functions
 
-In host application:
+In host application (`pkg/slop.Runtime`):
 
 ```go
-runtime.RegisterFunction("my_func", func(args []Value) Value {
+runtime.RegisterBuiltin("my_func", func(args []evaluator.Value, kwargs map[string]evaluator.Value) (evaluator.Value, error) {
     // Implementation
-    return result
+    return result, nil
 })
 ```
 
@@ -657,7 +616,7 @@ Usage in SLOP:
 result = my_func(arg1, arg2)
 ```
 
-### 10.2 Custom Services
+### 9.2 Custom Services
 
 In host application:
 
