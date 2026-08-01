@@ -8,6 +8,12 @@ description: Patterns for building LLM-driven agents in SLOP, including tool cal
 
 ## LLM as Service, Not Controller
 
+The `web`, `db`, and `math` service calls in the patterns below (`web.search`,
+`db.query`, `math.eval`, ...) are illustrative — they are not built into
+SLOP. Only `llm` is registered by default; a host application registers
+any other service with `Runtime.RegisterService` (see the
+[Built-in Functions](/docs/builtins/overview) page, section 4).
+
 ---
 
 ## 1. The Paradigm Shift
@@ -246,55 +252,47 @@ emit(answer)
 
 ### 3.4 Multi-Agent Collaboration
 
+There is no `agent.run()` or other built-in mechanism for one SLOP script
+to invoke another as a sub-agent — no `agent` service or keyword exists
+anywhere in the runtime. Composing multiple "agent" roles today means
+composing multiple `llm.call()` steps with different prompts/schemas in
+the same script, or wiring separate scripts together at the host level:
+
 ```python
-# Multiple specialized agents working together
+# Multiple LLM roles within a single script
 
 task = input.task
 
-# Agent 1: Researcher
-research = agent.run("researcher",
-    input: {task: "Research: {task}"},
-    limits: {max_steps: 5, max_llm_calls: 10}
+# "Researcher" role
+research = llm.call(
+    prompt: "Research: {task}",
+    schema: {findings: string, sources: list(string)}
 )
 
-# Agent 2: Critic (reviews research)
-critique = agent.run("critic",
-    input: {
-        research: research.output,
-        criteria: ["accuracy", "completeness", "relevance"]
-    },
-    limits: {max_steps: 3}
+# "Critic" role — reviews the research
+critique = llm.call(
+    prompt: "Critique this research against accuracy, completeness, and relevance: {research.findings}",
+    schema: {passed: bool, feedback: string}
 )
 
 # Iterate if needed (BOUNDED)
-for revision in range(3):
-    if critique.output.passed:
+for revision in range(3) with limit(3):
+    if critique.passed:
         break
-    
-    # Researcher revises based on feedback
-    research = agent.run("researcher",
-        input: {
-            task: task,
-            previous: research.output,
-            feedback: critique.output.feedback
-        },
-        limits: {max_steps: 3}
+
+    research = llm.call(
+        prompt: "Revise based on feedback: {critique.feedback}. Previous: {research.findings}",
+        schema: {findings: string, sources: list(string)}
     )
-    
-    # Critic reviews again
-    critique = agent.run("critic",
-        input: {research: research.output},
-        limits: {max_steps: 2}
+    critique = llm.call(
+        prompt: "Critique this research: {research.findings}",
+        schema: {passed: bool, feedback: string}
     )
 
-# Agent 3: Writer (produces final output)
-final = agent.run("writer",
-    input: {
-        task: task,
-        research: research.output,
-        critique: critique.output
-    },
-    limits: {max_steps: 3}
+# "Writer" role — produces final output
+final = llm.call(
+    prompt: "Write the final answer from: {research.findings}",
+    schema: {output: string}
 )
 
 emit(final.output)
@@ -633,55 +631,17 @@ emit(error: "max_steps", partial: context)
 
 ## 7. Debugging
 
-### 7.1 Trace Output
+There is no `--trace` or `--step` flag on `slop run`, and no interactive
+debugger. What exists for inspecting a script before/after running it:
 
 ```bash
-$ slop run agent.slop --trace
-
-[1] task = "Research quantum computing"
-[2] FOR step IN range(10):
-[3]   llm.call -> {action: "search", query: "quantum computing basics"}
-[4]   web.search("quantum computing basics") -> [{...}, {...}, ...]
-[5]   context.append(...)
-[6] FOR step IN range(10): (iteration 2)
-[7]   llm.call -> {action: "search", query: "quantum computing applications"}
-[8]   web.search("quantum computing applications") -> [{...}, {...}, ...]
-[9]   context.append(...)
-[10] FOR step IN range(10): (iteration 3)
-[11]  llm.call -> {action: "done", query: "Quantum computing is..."}
-[12]  emit({answer: "...", steps: 2})
-[13]  stop
-
-Execution complete: 3 iterations, 3 LLM calls, 2 searches
+$ slop check agent.slop    # Parse + termination + bounds, see Safety page
+$ slop plan agent.slop     # Static resource-bounds report, no step trace
 ```
 
-### 7.2 Step-Through
-
-```bash
-$ slop run agent.slop --step
-
-[1] task = "Research quantum computing"
-    > next
-
-[2] FOR step IN range(10):
-    > inspect context
-    context = []
-    > next
-
-[3] llm.call(...)
-    > inspect prompt
-    "Task: Research quantum computing\nContext: []\nWhat next?"
-    > next
-    -> {action: "search", query: "quantum computing basics"}
-    > next
-
-[4] web.search(...)
-    > skip  # Skip to next LLM call
-    
-[7] llm.call(...)
-    > modify analysis.action = "done"  # Force completion
-    > continue
-```
+For runtime visibility, use `log_info`/`log_debug` calls inside the
+script itself — every call is written to stderr as it executes — or
+`print()` for ad hoc values.
 
 ---
 
