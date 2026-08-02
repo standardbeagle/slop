@@ -51,6 +51,7 @@ A `pause` writes the whole runtime — code, stack, memory, emitted output — t
 
 ### Sandboxed by Default
 
+- 🧱 Pure language — no filesystem, network, shell, or imports; scripts only touch host-registered services
 - ⏱️ Automatic timeout protection
 - 🔁 Loop iteration limits
 - 📏 LLM call, API call, cost, and call-depth limits

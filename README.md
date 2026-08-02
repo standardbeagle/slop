@@ -20,13 +20,13 @@ emit(result.summary)
 
 ## 🚀 What is SLOP?
 
-SLOP is a scripting language and runtime built for code that LLMs write and run. The runtime treats execution state as data: a paused script is a JSON file containing its source, its position, every variable in every scope, the call stack, and everything it has emitted so far. That makes failed runs recoverable — when a generated script breaks three MCP calls in, you patch the checkpoint and resume instead of starting over.
+SLOP is a scripting language and runtime built for code that LLMs write and run. The language is pure: no filesystem, no network, no shell, no imports. A script can only reach what the host explicitly hands it — LLM services, MCP connections, and custom Go services registered with the runtime. The runtime treats execution state as data: a paused script is a JSON file containing its source, its position, every variable in every scope, the call stack, and everything it has emitted so far. That makes failed runs recoverable — when a generated script breaks three MCP calls in, you patch the checkpoint and resume instead of starting over.
 
 ### Why SLOP?
 
 - **⏸️ Pausable** - `pause("name")` snapshots the whole runtime to JSON; `slop resume` continues from that exact point
 - **✏️ Editable** - Rewrite the code, change variables, or adjust the stack in the checkpoint file, then resume
-- **🔒 Sandboxed** - Hard limits on iterations, LLM calls, API calls, duration, cost, and call depth
+- **🔒 Sandboxed** - Pure language: no filesystem, network, shell, or imports — only host-granted services. Hard limits on iterations, LLM calls, API calls, duration, cost, and call depth
 - **🔌 AI-Native** - Native LLM calls, MCP server integration, and schema validation
 - **🎯 Simple** - Python-like syntax an LLM (or a human) can write correctly on the first try
 - **📦 Modular** - Organize code into reusable agents and modules
@@ -185,7 +185,7 @@ Built-in validators cover common formats: `validate_json(s)`, `validate_email(s)
 
 ### Safety Built-in
 
-Loops run under explicit limits, and the CLI enforces global caps:
+The language has no filesystem, network, shell, or module-import access — generated code can only call services the host registered. (One ambient exception: `env_get` reads process environment variables; be aware of it when running untrusted scripts.) On top of that, loops run under explicit limits and the CLI enforces global caps:
 
 ```slop
 # Bounded loop - at most 100 iterations
