@@ -33,25 +33,38 @@ SLOP is a scripting language and runtime built for code that LLMs write and run.
 
 ## ⏸️ Pause, Edit, Resume
 
-This is the core workflow. Run a script with checkpoints enabled:
+This is the core workflow. An LLM writes a script that enriches a list of repos, with a pause before the risky stage:
+
+```slop
+repos = ["slop", "agnt", "worktrack"]
+summaries = []
+pause("before_enrich")
+for repo in repos:
+    info = github.get_repo(nme: repo)   # typo: bad kwarg, call will fail
+    summaries = summaries + [info]
+emit(json_stringify(summaries))
+```
 
 ```bash
-slop run agent.slop --checkpoint-dir ./checkpoints
+slop run enrich.slop --checkpoint-dir ./checkpoints
+# Script paused. Checkpoint saved to: ./checkpoints/20260801_193635.json
+
+slop resume ./checkpoints/20260801_193635.json
+# Error resuming: the API call fails
 ```
 
-```text
-Script paused. Checkpoint saved to: ./checkpoints/20260801_160903.json
-Message: after_fetch
-Resume with: slop resume ./checkpoints/20260801_160903.json
-```
+The checkpoint is still on disk, and every part of it is plain JSON you can edit: the script source, the resume position, every variable in every scope, the control-flow stack, all emitted output. How you continue is your call:
 
-The checkpoint is plain JSON — the script source, the pause position, every variable, the control-flow stack, and all emitted output. If the run had a bug (wrong tool argument, bad intermediate value, half-written generated code), open the file and fix it. To change the code, edit the `script` field and set `script_hash` to the SHA-256 of the new source. Then pick up where it left off:
+- **Skip the call** — move `position.statement_index` past the failing statement and resume from the next one.
+- **Patch the result** — make the API call yourself and paste the real response into `context.scopes[].variables` under `summaries`. A placeholder value works too, if the rest of the script can live with it.
+- **Rewrite the script** — fix the kwarg, or wrap the loop body in `try`/`catch` so one bad record stops killing the batch. Set `script_hash` to the SHA-256 of the new source.
 
 ```bash
-slop resume ./checkpoints/20260801_160903.json
+slop resume ./checkpoints/patched.json
+# ["slop: execution env","agnt: browser toolkit","worktrack: task store"]
 ```
 
-Execution continues from the pause point. Work completed before the pause is restored from the checkpoint, so an LLM can chain MCP calls and CLI commands across a long workflow and recover from any failure without redoing finished steps.
+Execution continues from the pause point with everything before it restored — fetched data, partial results, emitted output — so a long chain of MCP calls and CLI commands survives any single failure. One constraint: resume restarts at the top-level statement after the pause, so edit statements after the pause point freely but keep the ones before it in place.
 
 ## 📖 Quick Start
 

@@ -10,16 +10,21 @@ description: SLOP is a sandboxed execution environment for LLM-generated code �
 
 Scripts run under hard limits on iterations, LLM calls, API calls, duration, and cost. Any script can pause mid-run — and when it does, the entire execution state is written to a plain JSON checkpoint: the source code, the pause position, every variable in every scope, the call stack, and all output emitted so far.
 
-That state is editable. When a generated script fails three MCP calls into a workflow, you open the checkpoint, fix the code or patch a bad value, and resume from the exact pause point. Completed work is restored from the checkpoint, so nothing already done has to run again.
+That state is editable. When a generated script makes a bad API call three MCP calls into a workflow, the checkpoint gives you full freedom over how to continue:
+
+- **Skip the call** — move `position.statement_index` past the failing statement.
+- **Patch the result** — make the call yourself and paste the real response into the variable the script would have written, or drop in a placeholder and keep moving.
+- **Rewrite the script** — fix the call, or patch the loop's `try`/`catch` so one failure stops killing the batch. Update `script_hash` (SHA-256 of the new source) and resume.
 
 ```bash
 slop run agent.slop --checkpoint-dir ./checkpoints
-# Script paused. Checkpoint saved to: ./checkpoints/20260801_160903.json
+# Script paused. Checkpoint saved to: ./checkpoints/20260801_193635.json
 
-# ... edit the checkpoint JSON to fix the problem ...
+# ... a later API call fails on resume; the checkpoint is still on disk ...
+# ... edit the checkpoint JSON — code, position, or variables ...
 
-slop resume ./checkpoints/20260801_160903.json
-# continues from the pause point
+slop resume ./checkpoints/patched.json
+# continues from the pause point, completed work restored
 ```
 
 ## What is SLOP?
