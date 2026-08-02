@@ -806,3 +806,25 @@ count
 		assert.Equal(t, 0, svc.calls) // blocked before the call
 	})
 }
+
+func TestResumeFromCheckpointRestoresBuiltins(t *testing.T) {
+	dir := t.TempDir()
+	src := "x = 1\npause(\"p\")\nemit(json_stringify({a: x}))\n"
+
+	rt := NewRuntime()
+	rt.SetCheckpointDir(dir)
+	_, checkpointPath, err := rt.ExecuteWithCheckpoints(src)
+	require.NoError(t, err)
+	require.NotEmpty(t, checkpointPath, "script should pause and save a checkpoint")
+
+	// Resume in a fresh runtime, as the CLI does.
+	rt2 := NewRuntime()
+	rt2.SetCheckpointDir(dir)
+	program, err := rt2.Parse(src)
+	require.NoError(t, err)
+	rt2.SetCurrentProgram(program, src)
+
+	_, newCheckpointPath, err := rt2.ResumeFromCheckpoint(checkpointPath)
+	require.NoError(t, err, "builtins must be available after resume")
+	assert.Empty(t, newCheckpointPath)
+}

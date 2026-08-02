@@ -243,9 +243,17 @@ func (r *Runtime) ResumeFromCheckpoint(checkpointPath string) (Value, string, er
 		r.SetCheckpointDir(r.checkpointDir)
 	}
 
-	// Get builtins and services for restoration
-	// Note: Builtins stored in checkpoint will be restored if they exist in globals
+	// Get builtins and services for restoration.
+	// Resumed scripts must see the same builtins as the original run;
+	// an empty map would leave names like json_stringify undefined.
 	builtins := make(map[string]*evaluator.BuiltinValue)
+	for _, name := range r.registry.Names() {
+		if val, ok := r.registry.GetAsValue(name); ok {
+			if bv, ok := val.(*evaluator.BuiltinValue); ok {
+				builtins[name] = bv
+			}
+		}
+	}
 	services := r.evaluator.Context().Services
 
 	// Resume execution
