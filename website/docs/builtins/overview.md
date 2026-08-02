@@ -541,16 +541,7 @@ store_exists(key)        # Check exists
 store_keys(prefix?)      # List keys
 ```
 
-### 7.3 Environment
-
-```python
-env_get(name)             # Get env var or none — reads any OS env var by name
-env_get(name, default)    # Get with default
-env_mode()                 # "production", "test", or "development"
-env_debug()                 # true if SLOP_DEBUG is "1" or "true"
-```
-
-### 7.4 Assertions
+### 7.3 Assertions
 
 ```python
 assert(condition)        # Fail if false

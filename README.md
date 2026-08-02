@@ -185,7 +185,7 @@ Built-in validators cover common formats: `validate_json(s)`, `validate_email(s)
 
 ### Safety Built-in
 
-The language has no filesystem, network, shell, or module-import access — generated code can only call services the host registered. (One ambient exception: `env_get` reads process environment variables; be aware of it when running untrusted scripts.) On top of that, loops run under explicit limits and the CLI enforces global caps:
+The language has no filesystem, network, shell, module-import, or environment-variable access — generated code can only call services the host registered. On top of that, loops run under explicit limits and the CLI enforces global caps:
 
 ```slop
 # Bounded loop - at most 100 iterations

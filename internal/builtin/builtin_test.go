@@ -658,3 +658,11 @@ func TestGenerators(t *testing.T) {
 		assert.Len(t, color, 7)
 	})
 }
+
+func TestNoEnvironmentAccess(t *testing.T) {
+	r := NewRegistry()
+	for _, name := range []string{"env_get", "env_mode", "env_debug"} {
+		_, ok := r.Get(name)
+		assert.False(t, ok, "%s must not be registered: scripts read the environment only through host-granted services", name)
+	}
+}

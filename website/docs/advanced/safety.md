@@ -348,10 +348,9 @@ side effect of which built-ins exist:
 - No filesystem or process-execution built-ins ship by default, so
   scripts cannot touch the filesystem or run system commands unless a
   host application registers a service that does.
-- `env_get(name)` is a real, registered built-in
-  (`internal/builtin/control.go`) that wraps `os.Getenv` directly —
-  scripts **can** read any environment variable by name. `env_mode()` and
-  `env_debug()` also read `SLOP_ENV`/`ENV`/`SLOP_DEBUG` directly.
+- No environment-variable built-ins ship by default — scripts cannot
+  read `os.Getenv` values. If a host wants scripts to see specific
+  variables, it registers a service exposing exactly those.
 - Network access is only possible through services a host registers
   (`RegisterService`) — nothing built-in makes an HTTP call.
 - There is no dynamic `import`/`eval`/`exec`, so scripts cannot load or

@@ -3,7 +3,6 @@ package builtin
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/standardbeagle/slop/internal/evaluator"
 )
@@ -25,11 +24,6 @@ func (r *Registry) registerControlFunctions() {
 	r.Register("store_delete", builtinStoreDelete)
 	r.Register("store_exists", builtinStoreExists)
 	r.Register("store_keys", builtinStoreKeys)
-
-	// Environment
-	r.Register("env_get", builtinEnvGet)
-	r.Register("env_mode", builtinEnvMode)
-	r.Register("env_debug", builtinEnvDebug)
 
 	// Assertions
 	r.Register("assert", builtinAssert)
@@ -213,61 +207,6 @@ func builtinStoreKeys(args []evaluator.Value, _ map[string]evaluator.Value) (eva
 	}
 
 	return &evaluator.ListValue{Elements: keys}, nil
-}
-
-// Environment functions
-
-func builtinEnvGet(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
-	if err := requireRangeArgs("env_get", args, 1, 2); err != nil {
-		return nil, err
-	}
-
-	name, err := requireString("env_get", args[0])
-	if err != nil {
-		return nil, err
-	}
-
-	val := os.Getenv(name)
-	if val == "" {
-		if len(args) == 2 {
-			return args[1], nil
-		}
-		return evaluator.NONE, nil
-	}
-
-	return &evaluator.StringValue{Value: val}, nil
-}
-
-func builtinEnvMode(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
-	if err := requireArgs("env_mode", args, 0); err != nil {
-		return nil, err
-	}
-
-	// Check common environment variables
-	env := os.Getenv("SLOP_ENV")
-	if env == "" {
-		env = os.Getenv("ENV")
-	}
-	if env == "" {
-		env = os.Getenv("NODE_ENV") // Common fallback
-	}
-	if env == "" {
-		env = "development"
-	}
-
-	return &evaluator.StringValue{Value: env}, nil
-}
-
-func builtinEnvDebug(args []evaluator.Value, _ map[string]evaluator.Value) (evaluator.Value, error) {
-	if err := requireArgs("env_debug", args, 0); err != nil {
-		return nil, err
-	}
-
-	debug := os.Getenv("SLOP_DEBUG")
-	if debug == "1" || debug == "true" {
-		return evaluator.TRUE, nil
-	}
-	return evaluator.FALSE, nil
 }
 
 // Assertion functions
