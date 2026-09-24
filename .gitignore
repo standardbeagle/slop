@@ -36,7 +36,9 @@ website/.docusaurus/
 website/.cache-loader/
 
 # worktrack loop state (per-clone, lease_holder carries email)
-.worktrack/
+.worktrack/*
+!.worktrack/mcp.json
+!.worktrack/templates.json
 
 # tman shims
 /test
